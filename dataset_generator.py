@@ -31,8 +31,6 @@ def make_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
     return (image, mask)
 
 def generate_mock_dataset(count: int, size: (int, int), path: Path) -> (torch.Tensor, torch.Tensor):
-    print("MAKE DATASET", path)
-
     if not path.exists():
         os.makedirs(path)
 
