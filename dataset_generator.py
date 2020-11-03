@@ -5,6 +5,9 @@ import argparse
 from pathlib import Path
 import os
 
+ two channels, two classes, index equals number that is assigned to the pixel in the mask
+class_names = ['void', 'circle']
+
 def make_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
     image = torch.zeros((1, *size), dtype=torch.float)
     mask = torch.zeros((1, *size), dtype=torch.float)
@@ -48,6 +51,10 @@ def generate_mock_dataset(count: int, size: (int, int), path: Path) -> (torch.Te
         image, mask = make_image_mask_pair(size=size)
         save_image(image, image_path)
         save_image(mask, mask_path)
+
+    classes_file = path/'classes.txt'
+    with open(classes_file, 'w') as file:
+        file.write(','.join(class_names))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='generate a dataset for testing the unet')
