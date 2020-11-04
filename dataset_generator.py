@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import os
 
- two channels, two classes, index equals number that is assigned to the pixel in the mask
+# two channels, two classes, index equals number that is assigned to the pixel in the mask
 class_names = ['void', 'circle']
 
 def make_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
@@ -33,7 +33,7 @@ def make_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
     #plt.show()
     return (image, mask)
 
-def generate_mock_dataset(count: int, size: (int, int), path: Path) -> (torch.Tensor, torch.Tensor):
+def generate_dataset_part(count: int, size: (int, int), path: Path):
     if not path.exists():
         os.makedirs(path)
 
@@ -52,6 +52,13 @@ def generate_mock_dataset(count: int, size: (int, int), path: Path) -> (torch.Te
         save_image(image, image_path)
         save_image(mask, mask_path)
 
+def generate_mock_dataset(train_count: int, test_count: int, size: (int, int), path: Path):
+    if not path.exists():
+        os.makedirs(path)
+
+    generate_dataset_part(count=train_count, size=size, path=path/'train')
+    generate_dataset_part(count=test_count, size=size, path=path/'test')
+
     classes_file = path/'classes.txt'
     with open(classes_file, 'w') as file:
         file.write(','.join(class_names))
@@ -60,9 +67,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='generate a dataset for testing the unet')
     parser.add_argument('width', type=int, help='the width of the generated image images and masks')
     parser.add_argument('height', type=int, help='the height of the generated image images and masks')
-    parser.add_argument('count', type=int, help='the number of items to generate')
+    parser.add_argument('train_count', type=int, help='the number of items to generate for training')
+    parser.add_argument('test_count', type=int, help='the number of items to generate for testing')
     parser.add_argument('path', type=str, help='where to store the dataset, dataset structure will be created inside that directory')
 
     args = parser.parse_args()
 
-    generate_mock_dataset(count=args.count, size=(args.width, args.height), path=Path(args.path))
+    generate_mock_dataset(train_count=args.train_count, test_count=args.test_count, size=(args.width, args.height), path=Path(args.path))
