@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
 import os
+from multiprocessing import Pool
 
 # two channels, two classes, index equals number that is assigned to the pixel in the mask
 class_names = ['void', 'circle']
@@ -33,6 +34,13 @@ def make_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
     #plt.show()
     return (image, mask)
 
+def poolable_write_item(index: int, size: (int, int), images_dir: Path, masks_dir: Path):
+    image_path = images_dir/(str(index) + '.png')
+    mask_path = masks_dir/(str(index) + '.png')
+    image, mask = make_image_mask_pair(size=size)
+    save_image(image, image_path)
+    save_image(mask, mask_path)
+
 def generate_dataset_part(count: int, size: (int, int), path: Path):
     if not path.exists():
         os.makedirs(path)
@@ -45,12 +53,8 @@ def generate_dataset_part(count: int, size: (int, int), path: Path):
     if not masks_dir.exists():
         os.makedirs(masks_dir)
 
-    for i in range(0, count):
-        image_path = images_dir/(str(i) + '.png')
-        mask_path = masks_dir/(str(i) + '.png')
-        image, mask = make_image_mask_pair(size=size)
-        save_image(image, image_path)
-        save_image(mask, mask_path)
+    with Pool(5) as p:
+        p.starmap(poolable_write_item, [(index, size, images_dir, masks_dir) for index in range(0, count)])
 
 def generate_mock_dataset(train_count: int, test_count: int, size: (int, int), path: Path):
     if not path.exists():

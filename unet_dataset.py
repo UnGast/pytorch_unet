@@ -22,6 +22,8 @@ class UNetDataset(Dataset):
     self.filenames = [file_path.name for file_path in self.images_dir.glob('*.{}'.format(image_extension))]
     self.filenames = [file_path.name for file_path in self.masks_dir.glob('*.{}'.format(image_extension)) if file_path.name in self.filenames]
 
+    self.image_channels = 3
+    self.mask_channels = 1
     if len(self.filenames) > 0:
       image, _ = self[0]
       self.item_size = (image.shape[1], image.shape[2])
