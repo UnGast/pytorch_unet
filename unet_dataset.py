@@ -26,7 +26,7 @@ class UNetDataset(Dataset):
     self.mask_channels = 1
     if len(self.filenames) > 0:
       image, _ = self[0]
-      self.item_size = (image.shape[1], image.shape[2])
+      self.item_size = (image.shape[2], image.shape[1])
 
   def __len__(self):
     return len(self.filenames)
