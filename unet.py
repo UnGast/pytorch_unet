@@ -21,7 +21,7 @@ class UNetIntermediary(nn.Module):
         x = self.conv2(x)
         x = self.activate(x)
         return x
-        
+
 class UNetDownBlock(nn.Module):
     def __init__(self, in_size, in_channels, out_channels):
         super().__init__()
@@ -54,7 +54,6 @@ class UNetUpBlock(nn.Module):
 
     def forward(self, x, parallel_down_output):
         x = self.up_conv(x)
-        print("UP PASS", parallel_down_output.shape, x.shape)
         crop_y1 = math.floor(parallel_down_output.shape[2] / 2 - x.shape[2] / 2)
         crop_y2 = math.floor(parallel_down_output.shape[2] / 2 + x.shape[2] / 2)
         crop_x1 = math.floor(parallel_down_output.shape[3] / 2 - x.shape[3] / 2)
@@ -111,12 +110,10 @@ class UNet(nn.Module):
         up_pass_additions = []
         for i, block in enumerate(self.down_blocks):
             x, up_pass_addition = block(x)
-            print('down shape', i, x.shape)
             up_pass_additions.append(up_pass_addition.clone())
         x = self.bottom_block(x)
         for i, block in enumerate(self.up_blocks):
             x = block(x, up_pass_additions[self.depth - 2 - i])
-            print('up shape', i, x.shape)
         x = self.feature_convolution(x)
         x = self.upsample(x)
         x = self.upsample_correction(x)

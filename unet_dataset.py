@@ -37,8 +37,8 @@ class UNetDataset(Dataset):
     image = transforms.ToTensor()(image)
     mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
     mask = transforms.ToTensor()(mask)
-    mask = mask[0,:,:].unsqueeze(axis=0)
-    mask = nn.functional.one_hot(mask.type(torch.LongTensor)).type(torch.FloatTensor)
+    mask = mask[0,:,:]
+    mask = nn.functional.one_hot(mask.type(torch.LongTensor)).type(torch.FloatTensor).permute(2, 0, 1)
     return (image, mask)
 
 if __name__ == '__main__':
