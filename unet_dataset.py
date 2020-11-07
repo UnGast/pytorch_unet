@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset
 from torchvision import transforms
 from pathlib import Path
@@ -37,6 +38,7 @@ class UNetDataset(Dataset):
     mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
     mask = transforms.ToTensor()(mask)
     mask = mask[0,:,:].unsqueeze(axis=0)
+    mask = nn.functional.one_hot(mask.type(torch.LongTensor)).type(torch.FloatTensor)
     return (image, mask)
 
 if __name__ == '__main__':
@@ -50,3 +52,5 @@ if __name__ == '__main__':
   print('dataset length', len(dataset))
   print('classes', dataset.classes)
   print('item size', dataset.item_size)
+  print('image shape', dataset[0][0].shape)
+  print('mask shape', dataset[0][1].shape)
