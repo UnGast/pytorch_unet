@@ -20,12 +20,13 @@ def make_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
         for y in range(0, size[1]):
             point = torch.tensor([x, y], dtype=torch.float)
             distance = torch.dist(center, point)
-            if distance > max_distance:
-                image[0, x, y] = 0
-            else:
-                image[0, x, y] = 1 - distance / max_distance
+            #if distance > max_distance:
+            #    image[0, x, y] = 0
+            #else:
+            #    image[0, x, y] = 1 - distance / max_distance
             
             if distance < max_distance / 2:
+                image[0, x, y] = 1
                 mask[0, x, y] = 1
     
     #plt.imshow(image.squeeze(dim=0))
