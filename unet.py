@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms
+import math
 
 class UNetIntermediary(nn.Module):
     def __init__(self, in_size, in_channels, out_channels):
@@ -20,7 +21,7 @@ class UNetIntermediary(nn.Module):
         x = self.conv2(x)
         x = self.activate(x)
         return x
-
+        
 class UNetDownBlock(nn.Module):
     def __init__(self, in_size, in_channels, out_channels):
         super().__init__()
@@ -47,7 +48,6 @@ class UNetUpBlock(nn.Module):
         self.out_channels = out_channels
 
         self.up_conv = nn.ConvTranspose2d(in_channels=in_channels, out_channels=in_channels, kernel_size=2, stride=2)
-        self.downpass_crop = torchvision.transforms.CenterCrop(size=[in_size[0] * 2, in_size[1] * 2])
         self.intermediary = UNetIntermediary(in_size=(in_size[0] * 2, in_size[1] * 2), in_channels=in_channels, out_channels=out_channels)
 
         self.out_size = self.intermediary.out_size
@@ -55,8 +55,12 @@ class UNetUpBlock(nn.Module):
     def forward(self, x, parallel_down_output):
         x = self.up_conv(x)
         print("UP PASS", parallel_down_output.shape, x.shape)
-        addition = self.downpass_crop(parallel_down_output)
-        print("ADDTION SHAPE", addition.shape)
+        crop_y1 = math.floor(parallel_down_output.shape[2] / 2 - x.shape[2] / 2)
+        crop_y2 = math.floor(parallel_down_output.shape[2] / 2 + x.shape[2] / 2)
+        crop_x1 = math.floor(parallel_down_output.shape[3] / 2 - x.shape[3] / 2)
+        crop_x2 = math.floor(parallel_down_output.shape[3] / 2 + x.shape[3] / 2)
+        addition = parallel_down_output[:,:,crop_y1:crop_y2,crop_x1:crop_x2]
+        addition = torch.cat((addition, torch.zeros((x.shape[0], x.shape[1] - addition.shape[1], x.shape[2], x.shape[3]), dtype=torch.float)), dim=1)
         x = x + addition
         x = self.intermediary(x)
         return x
@@ -108,7 +112,7 @@ class UNet(nn.Module):
         for i, block in enumerate(self.down_blocks):
             x, up_pass_addition = block(x)
             print('down shape', i, x.shape)
-            up_pass_additions.append(up_pass_addition)
+            up_pass_additions.append(up_pass_addition.clone())
         x = self.bottom_block(x)
         for i, block in enumerate(self.up_blocks):
             x = block(x, up_pass_additions[self.depth - 2 - i])
