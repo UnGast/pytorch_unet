@@ -7,8 +7,10 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.nn as nn
 import matplotlib.pyplot as plt
+from typing import Callable
 
-def train(dataset: UNetDataset, n_epochs=1, batch_size=1, cuda=False):
+def train(dataset: UNetDataset, n_epochs=1, batch_size=1, cuda=False,\
+         hook_batch_result: Callable[[torch.Tensor, torch.Tensor, torch.Tensor, float], None] = None):
     dataloader = DataLoader(dataset, batch_size=batch_size)
     model = UNet(size=dataset.item_size, in_channels=dataset.image_channels, classes=dataset.classes, depth=5)
     if cuda:
@@ -19,13 +21,13 @@ def train(dataset: UNetDataset, n_epochs=1, batch_size=1, cuda=False):
     plt.ion()
     fig, (ax1, ax2) = plt.subplots(1, 2)
     ax1.imshow(dataset[0][0].permute(1, 2, 0))
-    ax2.imshow(torch.argmax(dataset[0][1], dim=0))
+    ax2.imshow(dataset[0][1])
     plt.show()
 
-    plt.ion()
-    progress_fig, progress_axes = plt.subplots(1, dataset[0][1].shape[0] + 1)
-    plt.show()
-    plt.pause(.001)
+    #plt.ion()
+    #progress_fig, progress_axes = plt.subplots(1, dataset[0][1].shape[0] + 1)
+    #plt.show()
+    #plt.pause(.001)
 
     for e in range(0, n_epochs):
 
@@ -40,7 +42,7 @@ def train(dataset: UNetDataset, n_epochs=1, batch_size=1, cuda=False):
             optimizer.zero_grad()
 
             predicted_mask = model(image)
-            loss = criterion(predicted_mask.cpu().reshape(predicted_mask.shape[0], predicted_mask.shape[1], -1), torch.argmax(mask.cpu(), dim=1).reshape(mask.shape[0], -1))
+            loss = criterion(predicted_mask.cpu().reshape(predicted_mask.shape[0], predicted_mask.shape[1], -1), mask.cpu().reshape(mask.shape[0], -1))
             loss.backward()
             optimizer.step()
 
@@ -48,12 +50,15 @@ def train(dataset: UNetDataset, n_epochs=1, batch_size=1, cuda=False):
             
             cpu_predicted_mask = predicted_mask.cpu().detach()
             
-            for i in range(0, predicted_mask.shape[1]):
-                progress_axes[i].imshow(cpu_predicted_mask[0][i])
-            progress_axes[len(progress_axes) - 1].imshow(torch.argmax(cpu_predicted_mask[0], dim=0))
-            progress_fig.canvas.draw()
-            progress_fig.canvas.flush_events()
-            progress_fig.show()
+            if hook_batch_result is not None:
+                hook_batch_result(image, mask, predicted_mask, loss.item())
+            
+            #for i in range(0, predicted_mask.shape[1]):
+            #    progress_axes[i].imshow(cpu_predicted_mask[0][i])
+            #progress_axes[len(progress_axes) - 1].imshow(torch.argmax(cpu_predicted_mask[0], dim=0))
+            #progress_fig.canvas.draw()
+            #progress_fig.canvas.flush_events()
+            #progress_fig.show()
 
             #output = predicted_mask.cpu()
 

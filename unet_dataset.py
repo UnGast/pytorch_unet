@@ -5,6 +5,7 @@ from torchvision import transforms
 from pathlib import Path
 from enum import Enum
 import PIL
+import dataset_generator
 
 class DatasetPart(Enum):
   Train = 'train'
@@ -37,9 +38,20 @@ class UNetDataset(Dataset):
     image = transforms.ToTensor()(image)
     mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
     mask = transforms.ToTensor()(mask)
-    mask = mask[0,:,:]
-    mask = nn.functional.one_hot(mask.type(torch.LongTensor)).type(torch.FloatTensor).permute(2, 0, 1)
+    mask = mask[0,:,:].type(torch.LongTensor)
+    #mask = nn.functional.one_hot(mask.type(torch.LongTensor)).type(torch.FloatTensor).permute(2, 0, 1)
     return (image, mask)
+
+class TmpUNetDataset(Dataset):
+    def __init__(self, item_size: (int, int), item_count: int):
+        self.item_size = item_size
+        self.item_count = item_count
+        
+    def __len__(self):
+        return self.item_count
+    
+    def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
+        return make_image_mask_pair(size=self.item_size)
 
 if __name__ == '__main__':
   import sys
