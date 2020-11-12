@@ -9,7 +9,7 @@ import dataset_generator
 
 class DatasetPart(Enum):
   Train = 'train'
-  Test = 'test'
+  Valid = 'valid'
 
 class UNetDataset(Dataset):
   def __init__(self, root_dir: Path, part: DatasetPart, image_extension='png'):
@@ -58,7 +58,7 @@ if __name__ == '__main__':
   import argparse
   parser = argparse.ArgumentParser()
   parser.add_argument('path', type=str, help='the root directory of the dataset')
-  parser.add_argument('part', type=str, help="'train' or 'test'")
+  parser.add_argument('part', type=str, choices=[DatasetPart.Train, DatasetPart.Valid])
   args = parser.parse_args()
   dataset = UNetDataset(root_dir=Path(args.path), part=args.part)
   print('dataset length', len(dataset))
