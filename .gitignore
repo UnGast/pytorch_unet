@@ -1,5 +1,7 @@
 .vscode
 __pycache__
 dataset
+advanced_dataset
+simple_dataset
 .ipynb_checkpoints
 runs
