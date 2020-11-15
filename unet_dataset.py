@@ -5,7 +5,7 @@ from torchvision import transforms
 from pathlib import Path
 from enum import Enum
 import PIL
-import dataset_generator
+from . import dataset_generator
 
 class DatasetPart(Enum):
   Train = 'train'
@@ -46,12 +46,13 @@ class TmpUNetDataset(Dataset):
     def __init__(self, item_size: (int, int), item_count: int):
         self.item_size = item_size
         self.item_count = item_count
+        self.items = [make_image_mask_pair(size=self.item_size) for _ in range(0, item_count)]
         
     def __len__(self):
         return self.item_count
     
     def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
-        return make_image_mask_pair(size=self.item_size)
+        return self.items
 
 if __name__ == '__main__':
   import sys
