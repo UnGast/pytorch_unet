@@ -11,11 +11,11 @@ from .unet_dataset import *
 import os
 
 class LearnerCallback():
-    def __init__(self, begin_epoch = None, begin_batch = None, end_batch = None, end_epoch = None):
-        self.begin_epoch = begin_epoch
-        self.begin_batch = begin_batch
-        self.end_batch = end_batch
-        self.end_epoch = end_epoch
+    def __init__(self, epoch_start = None, batch_start = None, batch_end = None, epoch_end = None):
+        self.epoch_start = epoch_start
+        self.batch_start = batch_start
+        self.batch_end = batch_end
+        self.epoch_end = epoch_end
     
     def __call__(self, event_name, *args, **kwargs):
         if getattr(self, event_name) is not None:
@@ -63,7 +63,7 @@ class UNetLearner():
 
         for e in range(self.current_epoch + 1, self.current_epoch + 1 + n_epochs):
             self.current_epoch = e
-            self.callback('begin_epoch', e)
+            self.callback('epoch_start', e)
 
             total_epoch_train_loss = 0.0
             epoch_train_item_count = 0
@@ -71,7 +71,7 @@ class UNetLearner():
             for batch_index, batch in enumerate(train_dataloader):
                 input, target = batch
 
-                self.callback('begin_batch', input, target)
+                self.callback('batch_start', input, target)
 
                 if self.cuda:
                     input = input.cuda()
@@ -89,7 +89,7 @@ class UNetLearner():
                 total_epoch_train_loss += loss.item()
                 epoch_train_item_count += len(batch)
 
-                self.callback('end_batch', input=input.cpu().detach(), target=target.cpu().detach(), prediction=cpu_prediction, loss=loss.item(), epoch=e, batch=batch_index)      
+                self.callback('batch_end', input=input.cpu().detach(), target=target.cpu().detach(), prediction=cpu_prediction, loss=loss.item(), epoch=e, batch=batch_index)      
             
             total_epoch_valid_loss = 0
             epoch_valid_item_count = 0
@@ -115,7 +115,7 @@ class UNetLearner():
             self.epoch_metrics['train_loss'].append(epoch_train_loss)
             self.epoch_metrics['valid_loss'].append(epoch_valid_loss)
             
-            self.callback('end_epoch', epoch_loss=epoch_train_loss, epoch=e)
+            self.callback('epoch_end', epoch_loss=epoch_train_loss, epoch=e)
             print('Epoch', e, 'train loss:', epoch_train_loss, 'valid loss:', epoch_valid_loss)
 
         #self.train_history.append(self.current_history_entry)

@@ -40,7 +40,7 @@ class UNetDataset(Dataset):
     image = PIL.Image.open(str(self.images_dir/self.filenames[index]))
     image = transforms.ToTensor()(image)
     mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
-    mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.FloatTensor)
+    mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.LongTensor)
     return (image, mask)
 
   def show_item(self, index, figsize=None):
