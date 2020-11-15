@@ -83,7 +83,7 @@ def generate_mock_dataset(difficulty: str, train_count: int, valid_count: int, s
     generate_dataset_part(difficulty=difficulty, count=train_count, size=size, path=path/'train')
     generate_dataset_part(difficulty=difficulty, count=valid_count, size=size, path=path/'valid')
 
-    classes_file = path/'classes.txt'
+    classes_file = path/'classes.csv'
     with open(classes_file, 'w') as file:
         file.write(','.join(class_names))
 
