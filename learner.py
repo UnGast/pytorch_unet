@@ -8,7 +8,7 @@ import torch.nn as nn
 import numpy as np
 from unet import *
 from unet_dataset import * 
-
+import os
 
 class LearnerCallback():
     def __init__(self, begin_epoch = None, begin_batch = None, end_batch = None, end_epoch = None):
@@ -20,7 +20,11 @@ class LearnerCallback():
     def __call__(self, event_name, *args, **kwargs):
         if getattr(self, event_name) is not None:
             getattr(self, event_name)(*args, **kwargs)
-            
+
+class TrainHistoryEntry():
+    def __init__(self, hyperparameters):
+        self.hyperparameters = hyperparameters
+        
 class UNetLearner():
     def __init__(self, model: UNet, train_dataset: UNetDataset=None, valid_dataset: UNetDataset=None, cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
         self.model=model
@@ -36,12 +40,26 @@ class UNetLearner():
             'train_loss': [],
             'valid_loss': []
         }
+        self._train_history = []
+        self.current_history_entry = None
+    
+    @property
+    def train_history(self):
+        return self._train_history + ([self.current_history_entry] if self.current_history_entry is not None else [])
+        
+    @train_history.setter
+    def train_history(self, new):
+        self._train_history = new
         
     def train(self, n_epochs: int, batch_size: int, lr=0.3e-3, momentum=0.9):
         train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size)
         valid_dataloader = DataLoader(self.valid_dataset, batch_size=batch_size)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=momentum)
+        
+        if self.current_history_entry is not None:
+            self.train_history.append(self.current_history_entry)
+        self.current_history_entry = TrainHistoryEntry(optimizer.state_dict())
 
         for e in range(self.current_epoch + 1, self.current_epoch + 1 + n_epochs):
             self.current_epoch = e
@@ -99,6 +117,9 @@ class UNetLearner():
             
             self.callback('end_epoch', epoch_loss=epoch_train_loss, epoch=e)
             print('Epoch', e, 'train loss:', epoch_train_loss, 'valid loss:', epoch_valid_loss)
+
+        #self.train_history.append(self.current_history_entry)
+        #self.current_history_entry = None
     
     def plot_metrics(self, **kwargs):
         plt.figure(**kwargs)
@@ -133,3 +154,30 @@ class UNetLearner():
 
     def predict(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
+    
+    def save_checkpoint(self, path: Path, model_id: str):
+        """
+        model_id: since the code for the model is not saved / the layer configuration is not saved, provide some id by which the model can be accessed later
+        """
+       
+        if not path.exists():
+            os.makedirs(path)
+    
+        history_path = path/'train_history.save'
+        torch.save(self.train_history, history_path)
+        
+        model_path = path/'model.save'
+        torch.save(self.model.state_dict(), model_path)
+        
+        model_id_info_path = path/'model.txt'
+        with open(model_id_info_path, 'w') as f:
+            f.write(model_id)
+            
+    def load_checkpoint(self, path: Path):
+        history_path = path/'train_history.save'
+        model_path = path/'model.save'
+
+        train_history = torch.load(history_path)
+        self.train_history = train_history
+        model_state = torch.load(model_path)
+        self.model.load_state_dict(model_state)
