@@ -55,13 +55,14 @@ class UNetUpBlock(nn.Module):
 
         self.out_size = self.intermediary.out_size
 
-    def forward(self, x, parallel_down_output):
+    def forward(self, x, shortcut):
         x = self.up_conv(x)
-        crop_y1 = math.floor(parallel_down_output.shape[2] / 2 - x.shape[2] / 2)
-        crop_y2 = math.floor(parallel_down_output.shape[2] / 2 + x.shape[2] / 2)
-        crop_x1 = math.floor(parallel_down_output.shape[3] / 2 - x.shape[3] / 2)
-        crop_x2 = math.floor(parallel_down_output.shape[3] / 2 + x.shape[3] / 2)
-        bypass = parallel_down_output[:,:,crop_y1:crop_y2,crop_x1:crop_x2]
+        crop_y1 = math.floor(shortcut.shape[2] / 2 - x.shape[2] / 2)
+        crop_y2 = math.floor(shortcut.shape[2] / 2 + x.shape[2] / 2)
+        crop_x1 = math.floor(shortcut.shape[3] / 2 - x.shape[3] / 2)
+        crop_x2 = math.floor(shortcut.shape[3] / 2 + x.shape[3] / 2)
+        bypass = shortcut[:,:,crop_y1:crop_y2,crop_x1:crop_x2]
+        print("BYPASS!", bypass.shape, "XX", x.shape)
         x = torch.cat((bypass, x), dim=1)
         x = self.intermediary(x)
         return x
@@ -141,9 +142,13 @@ class ResNetBlock(nn.Module):
         return x
 
 class ResNetBlockLayer(nn.Module):
-    def __init__(self, block_count, in_channels: int, out_channels: int):
+    def __init__(self, block_count, in_size: (int, int), in_channels: int, out_channels: int):
         super().__init__()
         self.pool = nn.MaxPool2d(kernel_size=2)
+        self.in_size = in_size
+        self.out_size = (int(in_size[0] / 2), int(in_size[1] / 2))
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         blocks = []
         next_in_channels = in_channels
         for i in range(0, block_count):
@@ -165,27 +170,48 @@ class ResNetUnet(nn.Module):
         self.depth = depth
 
         down_layers = []
+        next_in_size = in_size
         next_in_channels = in_channels
         next_out_channels = 64
         for i in range(0, self.depth):
-            down_layers.append(ResNetBlockLayer(block_count=6, in_channels=next_in_channels, out_channels=next_out_channels))
+            down_layers.append(ResNetBlockLayer(block_count=6, in_size=next_in_size, in_channels=next_in_channels, out_channels=next_out_channels))
+            next_in_size = down_layers[i].out_size
             next_in_channels = next_out_channels
             next_out_channels = next_out_channels * 2
 
         self.down = nn.ModuleList(down_layers)
 
-        self.decoder = nn.Sequential(Flatten())
-        
-        out = self.forward(torch.rand(1, in_channels, *in_size))
+        up_layers = []
+        next_out_channels = next_in_channels // 2
+        for i in range(0, self.depth - 1):
+            up_layers.append(UNetUpBlock(in_size=next_in_size, in_channels=next_in_channels, out_channels=next_out_channels))
+            next_in_size = up_layers[i].out_size
+            next_in_channels = next_out_channels
+            next_out_channels = next_out_channels // 2
 
-        self.decoder = nn.Sequential(Flatten(), nn.Linear(out.shape[1], n_classes))
+        self.up = nn.ModuleList(up_layers)
+        #self.decoder = nn.Sequential(Flatten())
+        
+        #out = self.forward(torch.rand(1, in_channels, *in_size))
+
+        #self.decoder = nn.Sequential(Flatten(), nn.Linear(out.shape[1], n_classes))
 
     def forward(self, x):
+        shortcuts = []
+
         for i in range(0, len(self.down)):
             x = self.down[i](x)
+            print("DOWN OUT SHAPE", self.down[i].in_size, i, x.shape)
+            shortcuts.append(x.detach())
 
-        x = self.decoder(x)
-        
+        shortcuts.reverse()
+
+        for i in range(0, len(self.up)):
+            print("UP!", "CURRENT X", x.shape, "SHORTCUT?", shortcuts[i].shape)
+            x = self.up[i](x, shortcut=shortcuts[i])
+            print("UP X IS", i, x.shape)
+        #x = self.decoder(x)
+
         return x
 
 if __name__ == '__main__':
