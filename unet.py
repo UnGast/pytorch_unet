@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms
+import torchvision.models
 import math
+
+from .flatten import Flatten
 
 class UNetIntermediary(nn.Module):
     def __init__(self, in_size, in_channels, out_channels):
@@ -117,6 +120,72 @@ class UNet(nn.Module):
         x = self.upsample(x)
         x = self.upsample_correction(x)
         #x = torch.argmax(x.permute(0, 2, 3, 1), dim=3)
+        return x
+
+class ResNetBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.activation = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.activation(x)
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.activation(x)
+        return x
+
+class ResNetBlockLayer(nn.Module):
+    def __init__(self, block_count, in_channels: int, out_channels: int):
+        super().__init__()
+        self.pool = nn.MaxPool2d(kernel_size=2)
+        blocks = []
+        next_in_channels = in_channels
+        for i in range(0, block_count):
+            block = ResNetBlock(next_in_channels, out_channels)
+            next_in_channels = out_channels
+            blocks.append(block)
+        self.blocks = nn.ModuleList(blocks)
+
+    def forward(self, x):
+        x = self.blocks[0](x)
+        x = self.pool(x)
+        for i in range(1, len(self.blocks)):
+            x = self.blocks[i](x)
+        return x
+
+class ResNetUnet(nn.Module):
+    def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int):
+        super().__init__()
+        self.depth = depth
+
+        down_layers = []
+        next_in_channels = in_channels
+        next_out_channels = 64
+        for i in range(0, self.depth):
+            down_layers.append(ResNetBlockLayer(block_count=6, in_channels=next_in_channels, out_channels=next_out_channels))
+            next_in_channels = next_out_channels
+            next_out_channels = next_out_channels * 2
+
+        self.down = nn.ModuleList(down_layers)
+
+        self.decoder = nn.Sequential(Flatten())
+        
+        out = self.forward(torch.rand(1, in_channels, *in_size))
+
+        self.decoder = nn.Sequential(Flatten(), nn.Linear(out.shape[1], n_classes))
+
+    def forward(self, x):
+        for i in range(0, len(self.down)):
+            x = self.down[i](x)
+
+        x = self.decoder(x)
+        
         return x
 
 if __name__ == '__main__':
