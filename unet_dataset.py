@@ -27,10 +27,10 @@ class UNetDataset(Dataset):
     self.filenames = [file_path.name for file_path in self.images_dir.glob('*.{}'.format(image_extension))]
     self.filenames = [file_path.name for file_path in self.masks_dir.glob('*.{}'.format(mask_extension)) if file_path.name in self.filenames]
 
-    self.image_channels = 3
     self.mask_channels = 1
     if len(self.filenames) > 0:
       image, _ = self[0]
+      self.image_channels = image.shape[0]
       self.item_size = (image.shape[2], image.shape[1])
 
   def __len__(self):
@@ -40,7 +40,7 @@ class UNetDataset(Dataset):
     image = PIL.Image.open(str(self.images_dir/self.filenames[index]))
     image = transforms.ToTensor()(image)
     mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
-    mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.LongTensor)
+    mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.LongTensor) # use this approach to prevent transforms.ToTensor converting everything to floats
     return (image, mask)
 
   def show_item(self, index, figsize=None):

@@ -9,6 +9,16 @@ import numpy as np
 from .unet import *
 from .unet_dataset import * 
 import os
+from abs import ABC
+
+class Metric(ABC):
+    @abstractmethod
+    def calculate(target, prediction):
+        pass
+
+class AccuracyMetric(Metric):
+    def calculate(target, prediction):
+        target.eq(prediction).sum()
 
 class LearnerCallback():
     def __init__(self, epoch_start = None, batch_start = None, batch_end = None, epoch_end = None):
@@ -26,7 +36,7 @@ class TrainHistoryEntry():
         self.hyperparameters = hyperparameters
         
 class Learner():
-    def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
+    def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Metric] = [AccuracyMetric], cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
         self.model = model
         self.train_loader = train_loader
         self.valid_loader = valid_loader
@@ -35,6 +45,8 @@ class Learner():
             self.model.cuda()
         self.train_loader = train_loader
         self.valid_loader = valid_loader
+        
+        self.metrics = metrics
 
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.SGD
@@ -69,7 +81,9 @@ class Learner():
             self.current_epoch = e
             self.callback('epoch_start', e)
 
-            total_epoch_train_loss = 0.0
+            total_epoch_train_loss = 0
+            total_epoch_metrics = 0 # TODO: implement generic metrics in learner!!!!!!
+            raise Exception("CONTINUE HERE")
             epoch_train_item_count = 0
             output = None
             for batch_index, batch in enumerate(self.train_loader):
@@ -132,30 +146,6 @@ class Learner():
         plt.legend()
         plt.show()
     
-    def show_results(self, dataset: UNetDataset, n_items: int, figsize: (int, int)=None):
-        dataloader = DataLoader(self.train_dataset, batch_size=1)
-        
-        compound_image = torch.zeros((dataset.image_channels, 1, 3 * dataset.item_size[1]), dtype=torch.float)
-        
-        with torch.no_grad():
-            for index, item in enumerate(dataloader):
-                if index >= n_items:
-                    break
-                input = item[0]
-                if self.cuda:
-                    input = input.cuda()
-                prediction = torch.argmax(self.model(input).cpu(), dim=1).type(torch.FloatTensor)
-                
-                item_compound_image = torch.cat((item[0][0], torch.stack(3 * [item[1][0].type(torch.FloatTensor)], dim=0), torch.stack(3 * [prediction[0]], dim=0)), dim=2)
-                compound_image = torch.cat((compound_image, item_compound_image), dim=1)
-                
-        plt.figure(figsize=figsize)
-        plt.imshow(compound_image.permute(1, 2, 0))
-        plt.show()
-            
-    def show_train_results(self, batch_size: int):
-        self.show_results(dataset=self.train_dataset, batch_size=batch_size)
-
     def predict(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
     
@@ -187,7 +177,37 @@ class Learner():
         self.model.load_state_dict(model_state)
 
 class UNetLearner(Learner):
-    pass
+    def show_results(self, dataloader: DataLoader, n_items: int, figsize: (int, int)=None):
+        figure, axes = plt.subplots(n_items, 3, squeeze=False, figsize=figsize)
+
+        compound_image = torch.zeros((dataloader.dataset.image_channels, 1, 3 * dataloader.dataset.item_size[1]), dtype=torch.float)
+        
+        with torch.no_grad():
+            for index, item in enumerate(dataloader):
+                if index >= n_items:
+                    break
+                input = item[0]
+                if self.cuda:
+                    input = input.cuda()
+                prediction = torch.argmax(self.model(input).cpu(), dim=1).type(torch.FloatTensor)
+                
+                print("ITEM", item[0].shape)
+
+                axes[index][0].imshow(item[0][0].squeeze())
+                axes[index][0].set_title('input')
+                axes[index][1].imshow(item[1].squeeze())
+                axes[index][1].set_title('target')
+                axes[index][2].imshow(prediction.detach().cpu().squeeze())
+                axes[index][2].set_title('prediction')
+
+                #item_compound_image = torch.cat((item[0][0], torch.stack(dataloader.dataset.image_channels * [item[0][1].type(torch.FloatTensor)], dim=0), torch.stack(3 * [prediction[0]], dim=0)), dim=2)
+                # = torch.cat((compound_image, item_compound_image), dim=1)
+                
+        figure.show()
+            
+    def show_train_results(self, n_items: int):
+        self.show_results(dataloader=self.train_loader, n_items=n_items)
+    
     """def __init__(self, model: UNet, train_dataset: UNetDataset=None, valid_dataset: UNetDataset=None, cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
         self.model=model
         self.cuda=cuda

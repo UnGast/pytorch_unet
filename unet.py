@@ -62,7 +62,6 @@ class UNetUpBlock(nn.Module):
         crop_x1 = math.floor(shortcut.shape[3] / 2 - x.shape[3] / 2)
         crop_x2 = math.floor(shortcut.shape[3] / 2 + x.shape[3] / 2)
         bypass = shortcut[:,:,crop_y1:crop_y2,crop_x1:crop_x2]
-        print("BYPASS!", bypass.shape, "XX", x.shape)
         x = torch.cat((bypass, x), dim=1)
         x = self.intermediary(x)
         return x
@@ -190,6 +189,12 @@ class ResNetUnet(nn.Module):
             next_out_channels = next_out_channels // 2
 
         self.up = nn.ModuleList(up_layers)
+
+        self.finish = nn.Sequential(
+            nn.Upsample(size=in_size),
+            nn.Conv2d(in_channels=up_layers[-1].out_channels, out_channels=n_classes, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels=n_classes, out_channels=n_classes, kernel_size=3, padding=1)
+        )
         #self.decoder = nn.Sequential(Flatten())
         
         #out = self.forward(torch.rand(1, in_channels, *in_size))
@@ -201,15 +206,14 @@ class ResNetUnet(nn.Module):
 
         for i in range(0, len(self.down)):
             x = self.down[i](x)
-            print("DOWN OUT SHAPE", self.down[i].in_size, i, x.shape)
             shortcuts.append(x.detach())
 
         shortcuts.reverse()
 
         for i in range(0, len(self.up)):
-            print("UP!", "CURRENT X", x.shape, "SHORTCUT?", shortcuts[i].shape)
-            x = self.up[i](x, shortcut=shortcuts[i])
-            print("UP X IS", i, x.shape)
+            x = self.up[i](x, shortcut=shortcuts[i + 1])
+
+        x = self.finish(x)
         #x = self.decoder(x)
 
         return x
