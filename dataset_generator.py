@@ -1,18 +1,20 @@
 import torch
 from torchvision.utils import save_image
+import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
 import os
 from multiprocessing import Pool
 import random
+from PIL import Image
 
 # two channels, two classes, index equals number that is assigned to the pixel in the mask
 class_names = ['void', 'circle']
 
 def make_simple_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
-    image = torch.zeros((1, *size), dtype=torch.float)
-    mask = torch.zeros((1, *size), dtype=torch.float)
+    image = torch.zeros((1, *size), dtype=torch.int)
+    mask = torch.zeros((1, *size), dtype=torch.int)
 
     center = torch.rand((2), dtype=torch.float) * torch.tensor(size, dtype=torch.float)
     max_distance = torch.norm(torch.tensor([size[0] / 2, size[1] / 2], dtype=torch.float), p=2) / 2
@@ -22,14 +24,14 @@ def make_simple_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor
             point = torch.tensor([x, y], dtype=torch.float)
             distance = torch.dist(center, point)
             if distance < max_distance:
-                image[0, x, y] = 1
+                image[0, x, y] = 255
                 mask[0, x, y] = 1
 
     return (image, mask)
 
 def make_advanced_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tensor):
-    image = torch.zeros((3, *size), dtype=torch.float)
-    mask = torch.zeros((1, *size), dtype=torch.float)
+    image = torch.zeros((3, *size), dtype=torch.int)
+    mask = torch.zeros((1, *size), dtype=torch.int)
 
     center = torch.rand((2), dtype=torch.float) * torch.tensor(size, dtype=torch.float)
     max_distance = torch.norm(torch.tensor([size[0] / 2, size[1] / 2], dtype=torch.float), p=2) / 2
@@ -41,7 +43,7 @@ def make_advanced_image_mask_pair(size: (int, int)) -> (torch.Tensor, torch.Tens
             point = torch.tensor([x, y], dtype=torch.float)
             distance = torch.dist(center, point)
             if distance < max_distance:
-                image[channel, x, y] = 1
+                image[channel, x, y] = 255
                 mask[0, x, y] = 1
 
     return (image, mask)
@@ -58,8 +60,10 @@ def poolable_write_item(index: int, difficulty: str, size: (int, int), images_di
     image_path = images_dir/(str(index) + '.png')
     mask_path = masks_dir/(str(index) + '.png')
     image, mask = make_image_mask_pair(difficulty=difficulty, size=size)
-    save_image(image, image_path)
-    save_image(mask, mask_path)
+    image = Image.fromarray(image.numpy().astype('uint8').transpose(2, 1, 0).squeeze())
+    mask = Image.fromarray(mask.numpy().astype('uint8').transpose(2, 1, 0).squeeze())
+    image.save(image_path)
+    mask.save(mask_path)
 
 def generate_dataset_part(difficulty: str, count: int, size: (int, int), path: Path):
     if not path.exists():
