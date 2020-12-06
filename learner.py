@@ -162,7 +162,7 @@ class Learner():
             for key, value in mean_epoch_metrics.items():
                 self.epoch_metrics[key].append(value)
 
-            self.callback('epoch_end', epoch_loss=mean_epoch_metrics['train_loss'], epoch=e)
+            self.callback('epoch_end', metrics=mean_epoch_metrics, epoch=e)
 
             try:
                 IPython.display.clear_output()

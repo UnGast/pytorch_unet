@@ -163,7 +163,7 @@ class ResNetBlockLayer(nn.Module):
             x = self.blocks[i](x)
         return x
 
-class ResNetUnet(nn.Module):
+class ResNetUNet(nn.Module):
     def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int):
         super().__init__()
         self.depth = depth
