@@ -9,16 +9,30 @@ import numpy as np
 from .unet import *
 from .unet_dataset import * 
 import os
-from abs import ABC
+from abc import ABC, abstractmethod
+from typing import Union
+try:
+    import IPython
+except Exception as e:
+    print(e)
 
 class Metric(ABC):
+    @classmethod
     @abstractmethod
-    def calculate(target, prediction):
+    def name(self):
+        pass
+
+    @abstractmethod
+    def calculate(self, prediction: torch.Tensor, target: torch.Tensor) -> float:
         pass
 
 class AccuracyMetric(Metric):
-    def calculate(target, prediction):
-        target.eq(prediction).sum()
+    @classmethod
+    def name(self):
+        return "accuracy"
+
+    def calculate(self, prediction: torch.Tensor, target: torch.Tensor) -> float:
+        return target.eq(torch.argmax(prediction, dim=1)).sum().item()
 
 class LearnerCallback():
     def __init__(self, epoch_start = None, batch_start = None, batch_end = None, epoch_end = None):
@@ -36,7 +50,7 @@ class TrainHistoryEntry():
         self.hyperparameters = hyperparameters
         
 class Learner():
-    def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Metric] = [AccuracyMetric], cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
+    def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
         self.model = model
         self.train_loader = train_loader
         self.valid_loader = valid_loader
@@ -46,16 +60,22 @@ class Learner():
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         
+        available_metrics = {M.name(): M for M in Metric.__subclasses__()}
+        for index, metric in enumerate(metrics):
+            if metric is str:
+                metrics[index] = available_metrics[metric]()
         self.metrics = metrics
 
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.SGD
 
-        self.current_epoch=-1
+        self.current_epoch = -1
         self.epoch_metrics = {
             'train_loss': [],
             'valid_loss': []
         }
+        for metric in self.metrics:
+            self.epoch_metrics[metric.name()] = []
         self._train_history = []
         self.current_history_entry = None
 
@@ -82,8 +102,10 @@ class Learner():
             self.callback('epoch_start', e)
 
             total_epoch_train_loss = 0
-            total_epoch_metrics = 0 # TODO: implement generic metrics in learner!!!!!!
-            raise Exception("CONTINUE HERE")
+            total_epoch_metrics = {key: 0 for (key, _) in self.epoch_metrics.items()}
+            total_epoch_metrics['train_loss'] = 0
+            total_epoch_metrics['valid_loss'] = 0
+
             epoch_train_item_count = 0
             output = None
             for batch_index, batch in enumerate(self.train_loader):
@@ -104,12 +126,14 @@ class Learner():
                 loss.backward()
                 optimizer.step()
                 
-                total_epoch_train_loss += loss.item()
+                total_epoch_metrics['train_loss'] += loss.item()
                 epoch_train_item_count += len(batch)
+                for metric in self.metrics:
+                    total_epoch_metrics[metric.name()] += metric.calculate(prediction=cpu_prediction, target=target.cpu())
 
                 self.callback('batch_end', input=input.cpu().detach(), target=target.cpu().detach(), prediction=cpu_prediction, loss=loss.item(), epoch=e, batch=batch_index)      
             
-            total_epoch_valid_loss = 0
+            #total_epoch_valid_loss = 0
             epoch_valid_item_count = 0
             
             if self.valid_loader is not None:
@@ -123,20 +147,31 @@ class Learner():
                         
                         prediction = self.model(input)
                         
-                        loss = criterion(prediction.reshape(prediction.shape[0], prediction.shape[1], -1), target.reshape(target.shape[0], -1))
+                        loss = criterion(prediction, target)#prediction.reshape(prediction.shape[0], prediction.shape[1], -1), target.reshape(target.shape[0], -1))
                     
                         total_epoch_valid_loss += loss.item()
                         epoch_valid_item_count += len(batch)
             
-            epoch_train_loss = total_epoch_train_loss / epoch_train_item_count
-            self.epoch_metrics['train_loss'].append(epoch_train_loss)
-            epoch_valid_loss = 0
+            mean_epoch_metrics = {key: value / epoch_train_item_count for key, value in total_epoch_metrics.items()}
+            #epoch_train_loss = total_epoch_train_loss / epoch_train_item_count
+            for key, value in mean_epoch_metrics.items():
+                #mean = total_epoch_metrics[metric.name] / epoch_train_item_count
+                self.epoch_metrics[key].append(value)
+            #epoch_valid_loss = 0
             if self.valid_loader is not None:       
                 epoch_valid_loss = total_epoch_valid_loss / epoch_valid_item_count
                 self.epoch_metrics['valid_loss'].append(epoch_valid_loss)
             
-            self.callback('epoch_end', epoch_loss=epoch_train_loss, epoch=e)
-            print('Epoch', e, 'train loss:', epoch_train_loss, 'valid loss:', epoch_valid_loss)
+            self.callback('epoch_end', epoch_loss=mean_epoch_metrics['train_loss'], epoch=e)
+
+            try:
+                IPython.display.clear_output()
+            except:
+                pass
+            print("Epoch", e)
+            for key, value in mean_epoch_metrics.items():
+                print(key, value)
+            print('------------------')
 
     def plot_metrics(self, **kwargs):
         plt.figure(**kwargs)
