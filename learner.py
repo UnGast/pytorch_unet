@@ -75,7 +75,8 @@ class Learner():
             'valid_loss': []
         }
         for metric in self.metrics:
-            self.epoch_metrics[metric.name()] = []
+            self.epoch_metrics['train_' + metric.name()] = []
+            self.epoch_metrics['valid_' + metric.name()] = []
         self._train_history = []
         self.current_history_entry = None
 
@@ -122,20 +123,18 @@ class Learner():
                 prediction = self.model(input)
                 cpu_prediction = prediction.cpu().detach()
 
-                loss = criterion(prediction.reshape(prediction.shape[0], prediction.shape[1], -1), target.reshape(target.shape[0], -1))
+                loss = criterion(prediction, target)
                 loss.backward()
                 optimizer.step()
                 
                 total_epoch_metrics['train_loss'] += loss.item()
-                epoch_train_item_count += len(batch)
                 for metric in self.metrics:
-                    total_epoch_metrics[metric.name()] += metric.calculate(prediction=cpu_prediction, target=target.cpu())
+                    total_epoch_metrics['train_' + metric.name()] += metric.calculate(prediction=cpu_prediction, target=target.cpu())
+                epoch_train_item_count += len(batch)
 
                 self.callback('batch_end', input=input.cpu().detach(), target=target.cpu().detach(), prediction=cpu_prediction, loss=loss.item(), epoch=e, batch=batch_index)      
             
-            #total_epoch_valid_loss = 0
             epoch_valid_item_count = 0
-            
             if self.valid_loader is not None:
                 with torch.no_grad():
                     for batch_index, batch in enumerate(self.valid_loader):
@@ -149,19 +148,20 @@ class Learner():
                         
                         loss = criterion(prediction, target)#prediction.reshape(prediction.shape[0], prediction.shape[1], -1), target.reshape(target.shape[0], -1))
                     
-                        total_epoch_valid_loss += loss.item()
+                        total_epoch_metrics['valid_loss'] += loss.item() 
+                        for metric in self.metrics:
+                            total_epoch_metrics['valid_' + metric.name()] += metric.calculate(prediction=cpu_prediction, target=target.cpu())
                         epoch_valid_item_count += len(batch)
             
-            mean_epoch_metrics = {key: value / epoch_train_item_count for key, value in total_epoch_metrics.items()}
-            #epoch_train_loss = total_epoch_train_loss / epoch_train_item_count
+            mean_epoch_metrics = {}
+            for key, value in total_epoch_metrics.items():
+                if key.startswith("train"):
+                    mean_epoch_metrics[key] = value / epoch_train_item_count
+                elif self.valid_loader is not None and key.startswith("valid"):
+                    mean_epoch_metrics[key] = value / epoch_valid_item_count
             for key, value in mean_epoch_metrics.items():
-                #mean = total_epoch_metrics[metric.name] / epoch_train_item_count
                 self.epoch_metrics[key].append(value)
-            #epoch_valid_loss = 0
-            if self.valid_loader is not None:       
-                epoch_valid_loss = total_epoch_valid_loss / epoch_valid_item_count
-                self.epoch_metrics['valid_loss'].append(epoch_valid_loss)
-            
+
             self.callback('epoch_end', epoch_loss=mean_epoch_metrics['train_loss'], epoch=e)
 
             try:
