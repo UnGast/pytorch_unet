@@ -221,26 +221,30 @@ class UNetLearner(Learner):
     def show_results(self, dataloader: DataLoader, n_items: int, figsize: (int, int)=None):
         figure, axes = plt.subplots(n_items, 3, squeeze=False, figsize=figsize)
 
-        compound_image = torch.zeros((dataloader.dataset.image_channels, 1, 3 * dataloader.dataset.item_size[1]), dtype=torch.float)
-        
         with torch.no_grad():
-            for index, item in enumerate(dataloader):
-                if index >= n_items:
-                    break
-                input = item[0]
-                if self.cuda:
-                    input = input.cuda()
-                prediction = torch.argmax(self.model(input).cpu(), dim=1).type(torch.FloatTensor)
-                
-                print("ITEM", item[0].shape)
+            def loop():
+                abs_item_index = 0
+                for batch_index, batch in enumerate(dataloader):
+                    batch_input = batch[0]
+                    batch_target = batch[0]
+                    batch_prediction = torch.argmax(self.model(batch_input.cuda()).cpu(), dim=1).type(torch.FloatTensor)
+                    
+                    for item_index in range(0, batch_input.shape[0]):
+                        if abs_item_index >= n_items:
+                            return
+                        input, target = (batch_input[item_index], batch_target[item_index])
+                        prediction = batch_prediction[item_index]
 
-                axes[index][0].imshow(item[0][0].squeeze())
-                axes[index][0].set_title('input')
-                axes[index][1].imshow(item[1].squeeze())
-                axes[index][1].set_title('target')
-                axes[index][2].imshow(prediction.detach().cpu().squeeze())
-                axes[index][2].set_title('prediction')
+                        axes[abs_item_index][0].imshow(input.permute(1, 2, 0).squeeze())
+                        axes[abs_item_index][0].set_title('input')
+                        axes[abs_item_index][1].imshow(target.permute(1, 2, 0).squeeze())
+                        axes[abs_item_index][1].set_title('target')
+                        axes[abs_item_index][2].imshow(prediction.squeeze())
+                        axes[abs_item_index][2].set_title('prediction')
 
+                        abs_item_index += 1
+
+            loop()
                 #item_compound_image = torch.cat((item[0][0], torch.stack(dataloader.dataset.image_channels * [item[0][1].type(torch.FloatTensor)], dim=0), torch.stack(3 * [prediction[0]], dim=0)), dim=2)
                 # = torch.cat((compound_image, item_compound_image), dim=1)
                 
