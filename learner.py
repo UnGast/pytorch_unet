@@ -16,6 +16,8 @@ try:
 except Exception as e:
     print(e)
 
+from .one_cycle_lr import OneCycleLR
+
 class Metric(ABC):
     @classmethod
     @abstractmethod
@@ -93,7 +95,8 @@ class Learner():
     def train(self, n_epochs: int, lr=0.3e-3, momentum=0.9):
         criterion = nn.CrossEntropyLoss()
         optimizer = self.optimizer(self.model.parameters(), lr=lr, momentum=momentum)
-        
+        lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
+
         if self.current_history_entry is not None:
             self.train_history.append(self.current_history_entry)
         self.current_history_entry = TrainHistoryEntry(optimizer.state_dict())
@@ -134,6 +137,8 @@ class Learner():
 
                 self.callback('batch_end', input=input.cpu().detach(), target=target.cpu().detach(), prediction=cpu_prediction, loss=loss.item(), epoch=e, batch=batch_index)      
             
+            lr_scheduler.step()
+
             epoch_valid_item_count = 0
             if self.valid_loader is not None:
                 with torch.no_grad():
@@ -172,6 +177,7 @@ class Learner():
             for key, value in mean_epoch_metrics.items():
                 print(key, value)
             print('------------------')
+            print('learning rate: {}'.format(lr_scheduler.get_lr()))
 
     def plot_metrics(self, **kwargs):
         plt.figure(**kwargs)
