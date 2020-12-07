@@ -1,6 +1,7 @@
 import torch
 import torchvision
 from collections import namedtuple
+import matplotlib
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import torch.optim as optim
@@ -34,7 +35,7 @@ class AccuracyMetric(Metric):
         return "accuracy"
 
     def calculate(self, prediction: torch.Tensor, target: torch.Tensor) -> float:
-        return target.eq(torch.argmax(prediction, dim=1)).sum().item()
+        return target.eq(torch.argmax(prediction, dim=1)).sum().item() / target.numel()
 
 class LearnerCallback():
     def __init__(self, epoch_start = None, batch_start = None, batch_end = None, epoch_end = None):
@@ -177,15 +178,28 @@ class Learner():
             for key, value in mean_epoch_metrics.items():
                 print(key, value)
             print('------------------')
-            print('learning rate: {}'.format(lr_scheduler.get_lr()))
+            print('learning rate: {}'.format(lr_scheduler.get_last_lr()))
 
-    def plot_metrics(self, **kwargs):
-        plt.figure(**kwargs)
-        plt.plot(list(range(0, self.current_epoch + 1)), self.epoch_metrics['train_loss'], label='train loss')
+    def plot_metrics(self, **kwargs) -> plt.Figure:
+        """
+        **kwargs are forwarded to matplotlib.payplot.figure()
+        """
+        was_interactive = matplotlib.is_interactive()
+        if was_interactive:
+            plt.ioff()
+
+        figure = plt.figure(**kwargs)
+        ax = figure.add_subplot()
+
+        ax.plot(list(range(0, self.current_epoch + 1)), self.epoch_metrics['train_loss'], label='train loss')
         if self.valid_loader is not None:
-            plt.plot(list(range(0, self.current_epoch + 1)), self.epoch_metrics['valid_loss'], label='valid loss')
-        plt.legend()
-        plt.show()
+            ax.plot(list(range(0, self.current_epoch + 1)), self.epoch_metrics['valid_loss'], label='valid loss')
+        figure.legend()
+
+        if was_interactive:
+            plt.ion()
+
+        return figure
     
     def predict(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
@@ -207,6 +221,19 @@ class Learner():
         model_id_info_path = path/'model.txt'
         with open(model_id_info_path, 'w') as f:
             f.write(model_id)
+
+        last_metrics = {key: values[len(values) - 1] for key, values in self.epoch_metrics.items()}
+        with open((path/'metrics.csv'), 'w') as file:
+            for key in last_metrics.keys():
+                file.write('{},'.format(key))
+            file.write('\n')
+            for value in last_metrics.values():
+                file.write('{},'.format(value))
+            file.write('\n')
+
+        metrics_figure = self.plot_metrics(figsize=(20, 20))
+        metrics_figure.savefig(path/'metrics.png')
+
             
     def load_checkpoint(self, path: Path):
         history_path = path/'train_history.save'
@@ -218,7 +245,18 @@ class Learner():
         self.model.load_state_dict(model_state)
 
 class UNetLearner(Learner):
-    def show_results(self, dataloader: DataLoader, n_items: int, figsize: (int, int)=None):
+    def save_checkpoint(self, path: Path, model_id: str):
+        super().save_checkpoint(path=path, model_id=model_id)
+        train_results_figure = self.show_results(self.train_loader, n_items=5, figsize=(20, 20))
+        valid_results_figure = self.show_results(self.valid_loader, n_items=5, figsize=(20, 20))
+        train_results_figure.savefig(path/'train_results.png')
+        valid_results_figure.savefig(path/'valid_results.png')
+
+    def show_results(self, dataloader: DataLoader, n_items: int, figsize: (int, int)=None) -> plt.Figure:
+        was_interactive = matplotlib.is_interactive()
+        if was_interactive:
+            plt.ioff()
+        
         figure, axes = plt.subplots(n_items, 3, squeeze=False, figsize=figsize)
 
         with torch.no_grad():
@@ -245,10 +283,11 @@ class UNetLearner(Learner):
                         abs_item_index += 1
 
             loop()
-                #item_compound_image = torch.cat((item[0][0], torch.stack(dataloader.dataset.image_channels * [item[0][1].type(torch.FloatTensor)], dim=0), torch.stack(3 * [prediction[0]], dim=0)), dim=2)
-                # = torch.cat((compound_image, item_compound_image), dim=1)
+
+        if was_interactive:
+            plt.ion()
                 
-        figure.show()
+        return figure
             
-    def show_train_results(self, n_items: int):
-        self.show_results(dataloader=self.train_loader, n_items=n_items)
+    def show_train_results(self, n_items: int) -> plt.Figure:
+        return self.show_results(dataloader=self.train_loader, n_items=n_items)
