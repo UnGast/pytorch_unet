@@ -218,6 +218,9 @@ class Learner():
         model_path = path/'model.save'
         torch.save(self.model.state_dict(), model_path)
         
+        with open(path/'epoch.txt', 'w') as file:
+            file.write(str(self.current_epoch))
+
         model_id_info_path = path/'model.txt'
         with open(model_id_info_path, 'w') as f:
             f.write(model_id)
@@ -233,11 +236,13 @@ class Learner():
 
         metrics_figure = self.plot_metrics(figsize=(20, 20))
         metrics_figure.savefig(path/'metrics.png')
-
             
     def load_checkpoint(self, path: Path):
         history_path = path/'train_history.save'
         model_path = path/'model.save'
+
+        with open(path/'epoch.txt', 'r') as file: 
+            self.current_epoch = int(file.read())
 
         train_history = torch.load(history_path)
         self.train_history = train_history
