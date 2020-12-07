@@ -12,6 +12,7 @@ from .unet_dataset import *
 import os
 from abc import ABC, abstractmethod
 from typing import Union
+from datetime import datetime
 try:
     import IPython
 except Exception as e:
@@ -49,8 +50,15 @@ class LearnerCallback():
             getattr(self, event_name)(*args, **kwargs)
 
 class TrainHistoryEntry():
-    def __init__(self, hyperparameters):
-        self.hyperparameters = hyperparameters
+    def __init__(self, epoch, timestamp: datetime, hyperparameters = None, metrics = None):
+        self.epoch = epoch
+        self.timestamp = timestamp
+
+        if hyperparameters is not None:
+            self.hyperparameters = hyperparameters
+        
+        if metrics is not None:
+            self.metrics = metrics
         
 class Learner():
     def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
@@ -80,27 +88,24 @@ class Learner():
         for metric in self.metrics:
             self.epoch_metrics['train_' + metric.name()] = []
             self.epoch_metrics['valid_' + metric.name()] = []
-        self._train_history = []
-        self.current_history_entry = None
+        self.train_history = []
 
         self.callback = callback
 
-    @property
-    def train_history(self):
-        return self._train_history + ([self.current_history_entry] if self.current_history_entry is not None else [])
+    #@property
+    #def train_history(self):
+    #    return self._train_history + ([self.current_history_entry] if self.current_history_entry is not None else [])
         
-    @train_history.setter
-    def train_history(self, new):
-        self._train_history = new
+    #@train_history.setter
+    #def train_history(self, new):
+    #    self._train_history = new
 
     def train(self, n_epochs: int, lr=0.3e-3, momentum=0.9):
         criterion = nn.CrossEntropyLoss()
         optimizer = self.optimizer(self.model.parameters(), lr=lr, momentum=momentum)
         lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
 
-        if self.current_history_entry is not None:
-            self.train_history.append(self.current_history_entry)
-        self.current_history_entry = TrainHistoryEntry(optimizer.state_dict())
+        self.train_history.append(TrainHistoryEntry(epoch=self.current_epoch, timestamp=datetime.now(), hyperparameters=optimizer.state_dict()))
 
         for e in range(self.current_epoch + 1, self.current_epoch + 1 + n_epochs):
             self.current_epoch = e
@@ -168,6 +173,8 @@ class Learner():
             for key, value in mean_epoch_metrics.items():
                 self.epoch_metrics[key].append(value)
 
+            self.train_history.append(TrainHistoryEntry(epoch=self.current_epoch, timestamp=datetime.now(), metrics=self.epoch_metrics))
+
             self.callback('epoch_end', metrics=mean_epoch_metrics, epoch=e)
 
             try:
@@ -191,9 +198,8 @@ class Learner():
         figure = plt.figure(**kwargs)
         ax = figure.add_subplot()
 
-        ax.plot(list(range(0, self.current_epoch + 1)), self.epoch_metrics['train_loss'], label='train loss')
-        if self.valid_loader is not None:
-            ax.plot(list(range(0, self.current_epoch + 1)), self.epoch_metrics['valid_loss'], label='valid loss')
+        for key, values in self.epoch_metrics.items():
+            ax.plot(list(range(0, len(values))), values, label=key)
         figure.legend()
 
         if was_interactive:
@@ -246,8 +252,16 @@ class Learner():
 
         train_history = torch.load(history_path)
         self.train_history = train_history
+        
         model_state = torch.load(model_path)
         self.model.load_state_dict(model_state)
+
+        most_recent_timestamp = datetime.fromtimestamp(0)
+        for entry in self.train_history:
+            if hasattr(entry, 'metrics'):
+                if entry.timestamp > most_recent_timestamp:
+                    most_recent_timestamp = entry.timestamp
+                    self.epoch_metrics = entry.metrics
 
 class UNetLearner(Learner):
     def save_checkpoint(self, path: Path, model_id: str):
