@@ -3,6 +3,7 @@ import torch.nn as nn
 import torchvision.transforms
 import torchvision.models
 import math
+from typing import Union
 
 from .flatten import Flatten
 
@@ -164,7 +165,7 @@ class ResNetBlockLayer(nn.Module):
         return x
 
 class ResNetUNet(nn.Module):
-    def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int):
+    def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int, cuda_device: Union[None, int] = None):
         super().__init__()
         self.depth = depth
 
@@ -195,6 +196,10 @@ class ResNetUNet(nn.Module):
             nn.Conv2d(in_channels=up_layers[-1].out_channels, out_channels=n_classes, kernel_size=3, padding=1),
             nn.Conv2d(in_channels=n_classes, out_channels=n_classes, kernel_size=3, padding=1)
         )
+
+        self.cuda_device = cuda_device
+        if self.cuda_device is not None:
+            self.cuda(self.cuda_device)
         #self.decoder = nn.Sequential(Flatten())
         
         #out = self.forward(torch.rand(1, in_channels, *in_size))
@@ -202,6 +207,8 @@ class ResNetUNet(nn.Module):
         #self.decoder = nn.Sequential(Flatten(), nn.Linear(out.shape[1], n_classes))
 
     def forward(self, x):
+        x = x.cuda(self.cuda_device)
+        
         shortcuts = []
 
         for i in range(0, len(self.down)):

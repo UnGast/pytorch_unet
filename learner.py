@@ -60,14 +60,81 @@ class TrainHistoryEntry():
         if metrics is not None:
             self.metrics = metrics
         
+class LearnerCheckpoint():
+    def __init__(self, epoch: int, timestamp: datetime, model_id: str, model_state, train_history: [TrainHistoryEntry], last_metrics: {str: int}, metrics_figure: plt.Figure):
+        self.epoch = epoch
+        self.timestamp = timestamp
+        self.model_id = model_id
+        self.model_state = model_state
+        self.train_history = train_history
+        self.last_metrics = last_metrics
+        self.metrics_figure = metrics_figure
+
+    def save(self, path: Path):
+        if not path.exists():
+            os.makedirs(path)
+    
+        torch.save(self.train_history, path/'train_history.save')
+        torch.save(self.model_state, path/'model.save')
+        
+        with open(path/'epoch.txt', 'w') as file:
+            file.write(str(self.epoch))
+
+        with open(path/'timestamp.txt', 'w') as file:
+            file.write(str(self.timestamp))
+
+        model_id_info_path = path/'model.txt'
+        with open(path/'model.txt', 'w') as f:
+            f.write(self.model_id)
+
+        with open((path/'metrics.csv'), 'w') as file:
+            for key in self.last_metrics.keys():
+                file.write('{},'.format(key))
+            file.write('\n')
+            for value in self.last_metrics.values():
+                file.write('{},'.format(value))
+            file.write('\n')
+
+        self.metrics_figure.savefig(path/'metrics.png')
+
+    @classmethod
+    def load(cls, path: Path) -> 'LearnerCheckpoint':
+        result = cls(None, None, None, None, None, None, None)
+        
+        with open(path/'epoch.txt', 'r') as file: 
+            result.epoch = int(file.read())
+
+        with open(path/'timestamp.txt', 'r') as file:
+            result.timestamp = datetime.strptime(file.read(), '%Y-%m-%d %H:%M:%S.%f')
+
+        train_history = torch.load(path/'train_history.save')
+        result.train_history = train_history
+        
+        result.model_state = torch.load(path/'model.save')
+        
+        return result
+
+class UNetLearnerCheckpoint(LearnerCheckpoint):
+    def __init__(self, train_results_figure, valid_results_figure, **kwargs):
+        super().__init__(**kwargs)
+        self.train_results_figure = train_results_figure
+        self.valid_results_figure = valid_results_figure
+
+    def save(self, path: Path):
+        super().save(path=path)
+
+        self.train_results_figure.savefig(path/'train_results.png')
+        self.valid_results_figure.savefig(path/'valid_results.png')
+
+    @classmethod
+    def load(cls, path: Path) -> 'UNetLearnerCheckpoint':
+        return cls(train_results_figure=None, valid_results_figure=None, **LearnerCheckpoint.load(path=path).__dict__)
+
 class Learner():
-    def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], cuda: bool=False, callback: LearnerCallback=LearnerCallback()):
+    def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], callback: LearnerCallback=LearnerCallback()):
         self.model = model
         self.train_loader = train_loader
         self.valid_loader = valid_loader
-        self.cuda = cuda
-        if self.cuda:
-            self.model.cuda()
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         
@@ -92,14 +159,6 @@ class Learner():
 
         self.callback = callback
 
-    #@property
-    #def train_history(self):
-    #    return self._train_history + ([self.current_history_entry] if self.current_history_entry is not None else [])
-        
-    #@train_history.setter
-    #def train_history(self, new):
-    #    self._train_history = new
-
     def train(self, n_epochs: int, lr=0.3e-3, momentum=0.9):
         criterion = nn.CrossEntropyLoss()
         optimizer = self.optimizer(self.model.parameters(), lr=lr, momentum=momentum)
@@ -123,25 +182,21 @@ class Learner():
 
                 self.callback('batch_start', input, target)
 
-                if self.cuda:
-                    input = input.cuda()
-                    target = target.cuda()
-
                 optimizer.zero_grad()
 
                 prediction = self.model(input)
-                cpu_prediction = prediction.cpu().detach()
+                cpu_prediction = prediction.cpu()
 
-                loss = criterion(prediction, target)
+                loss = criterion(cpu_prediction, target)
                 loss.backward()
                 optimizer.step()
                 
                 total_epoch_metrics['train_loss'] += loss.item()
                 for metric in self.metrics:
-                    total_epoch_metrics['train_' + metric.name()] += metric.calculate(prediction=cpu_prediction, target=target.cpu())
+                    total_epoch_metrics['train_' + metric.name()] += metric.calculate(prediction=cpu_prediction.detach(), target=target.cpu())
                 epoch_train_item_count += len(batch)
 
-                self.callback('batch_end', input=input.cpu().detach(), target=target.cpu().detach(), prediction=cpu_prediction, loss=loss.item(), epoch=e, batch=batch_index)      
+                self.callback('batch_end', input=input.cpu(), target=target.cpu(), prediction=cpu_prediction.detach(), loss=loss.item(), epoch=e, batch=batch_index)      
             
             lr_scheduler.step()
 
@@ -151,17 +206,13 @@ class Learner():
                     for batch_index, batch in enumerate(self.valid_loader):
                         input, target = batch
                         
-                        if self.cuda:
-                            input=input.cuda()
-                            target=target.cuda()
+                        prediction = self.model(input).cpu()
                         
-                        prediction = self.model(input)
-                        
-                        loss = criterion(prediction, target)#prediction.reshape(prediction.shape[0], prediction.shape[1], -1), target.reshape(target.shape[0], -1))
+                        loss = criterion(prediction, target)
                     
                         total_epoch_metrics['valid_loss'] += loss.item() 
                         for metric in self.metrics:
-                            total_epoch_metrics['valid_' + metric.name()] += metric.calculate(prediction=cpu_prediction, target=target.cpu())
+                            total_epoch_metrics['valid_' + metric.name()] += metric.calculate(prediction=prediction, target=target)
                         epoch_valid_item_count += len(batch)
             
             mean_epoch_metrics = {}
@@ -210,51 +261,22 @@ class Learner():
     def predict(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
     
-    def save_checkpoint(self, path: Path, model_id: str):
+    def make_checkpoint(self, model_id: str) -> LearnerCheckpoint:
         """
         model_id: since the code for the model is not saved / the layer configuration is not saved, provide some id by which the model can be accessed later
         """
-       
-        if not path.exists():
-            os.makedirs(path)
-    
-        history_path = path/'train_history.save'
-        torch.save(self.train_history, history_path)
-        
-        model_path = path/'model.save'
-        torch.save(self.model.state_dict(), model_path)
-        
-        with open(path/'epoch.txt', 'w') as file:
-            file.write(str(self.current_epoch))
-
-        model_id_info_path = path/'model.txt'
-        with open(model_id_info_path, 'w') as f:
-            f.write(model_id)
-
         last_metrics = {key: values[len(values) - 1] for key, values in self.epoch_metrics.items()}
-        with open((path/'metrics.csv'), 'w') as file:
-            for key in last_metrics.keys():
-                file.write('{},'.format(key))
-            file.write('\n')
-            for value in last_metrics.values():
-                file.write('{},'.format(value))
-            file.write('\n')
-
         metrics_figure = self.plot_metrics(figsize=(20, 20))
-        metrics_figure.savefig(path/'metrics.png')
-            
-    def load_checkpoint(self, path: Path):
-        history_path = path/'train_history.save'
-        model_path = path/'model.save'
+        checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(), model_id=model_id,\
+            model_state=self.model.state_dict(), train_history=self.train_history, last_metrics=last_metrics, metrics_figure=metrics_figure)
+        return checkpoint
 
-        with open(path/'epoch.txt', 'r') as file: 
-            self.current_epoch = int(file.read())
+    def load_checkpoint(self, checkpoint: LearnerCheckpoint):
+        self.current_epoch = checkpoint.epoch
 
-        train_history = torch.load(history_path)
-        self.train_history = train_history
+        self.train_history = checkpoint.train_history 
         
-        model_state = torch.load(model_path)
-        self.model.load_state_dict(model_state)
+        self.model.load_state_dict(checkpoint.model_state)
 
         most_recent_timestamp = datetime.fromtimestamp(0)
         for entry in self.train_history:
@@ -264,12 +286,12 @@ class Learner():
                     self.epoch_metrics = entry.metrics
 
 class UNetLearner(Learner):
-    def save_checkpoint(self, path: Path, model_id: str):
-        super().save_checkpoint(path=path, model_id=model_id)
+    def make_checkpoint(self, model_id: str) -> UNetLearnerCheckpoint:
+        checkpoint = super().make_checkpoint(model_id=model_id)
         train_results_figure = self.show_results(self.train_loader, n_items=5, figsize=(20, 20))
         valid_results_figure = self.show_results(self.valid_loader, n_items=5, figsize=(20, 20))
-        train_results_figure.savefig(path/'train_results.png')
-        valid_results_figure.savefig(path/'valid_results.png')
+        checkpoint = UNetLearnerCheckpoint(train_results_figure=train_results_figure, valid_results_figure=valid_results_figure, **checkpoint.__dict__)
+        return checkpoint
 
     def show_results(self, dataloader: DataLoader, n_items: int, figsize: (int, int)=None) -> plt.Figure:
         was_interactive = matplotlib.is_interactive()
