@@ -133,6 +133,9 @@ class LearnerCheckpoint():
     @classmethod
     def load(cls, path: Path) -> 'LearnerCheckpoint':
         result = cls(None, None, None, None, None)
+
+        with open(path/'model.txt', 'r') as file:
+            result.model_id = file.read()
         
         with open(path/'epoch.txt', 'r') as file: 
             result.epoch = int(file.read())
@@ -165,7 +168,8 @@ class UNetLearnerCheckpoint(LearnerCheckpoint):
         return cls(train_results_figure=None, valid_results_figure=None, **LearnerCheckpoint.load(path=path).__dict__)
 
 class Learner():
-    def __init__(self, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], callback: LearnerCallback=LearnerCallback()):
+    def __init__(self, model_id: str, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], callback: LearnerCallback=LearnerCallback()):
+        self.model_id = model_id
         self.model = model
         self.train_loader = train_loader
         self.valid_loader = valid_loader
@@ -295,11 +299,11 @@ class Learner():
     def predict(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
     
-    def make_checkpoint(self, model_id: str) -> LearnerCheckpoint:
+    def make_checkpoint(self) -> LearnerCheckpoint:
         """
         model_id: since the code for the model is not saved / the layer configuration is not saved, provide some id by which the model can be accessed later
         """
-        checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(), model_id=model_id,\
+        checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(), model_id=self.model_id,\
             model_state=self.model.state_dict(), train_history=self.train_history)
         return checkpoint
 
@@ -318,8 +322,8 @@ class Learner():
                     self.epoch_metrics = entry.metrics
 
 class UNetLearner(Learner):
-    def make_checkpoint(self, model_id: str) -> UNetLearnerCheckpoint:
-        checkpoint = super().make_checkpoint(model_id=model_id)
+    def make_checkpoint(self) -> UNetLearnerCheckpoint:
+        checkpoint = super().make_checkpoint()
         train_results_figure = self.show_results(self.train_loader, n_items=5, figsize=(20, 20))
         valid_results_figure = self.show_results(self.valid_loader, n_items=5, figsize=(20, 20))
         checkpoint = UNetLearnerCheckpoint(train_results_figure=train_results_figure, valid_results_figure=valid_results_figure, **checkpoint.__dict__)
