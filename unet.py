@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchvision.transforms
 import torchvision.models
 import math
-from typing import Union
+from typing import Union, Optional, List
 
 from .flatten import Flatten
 
@@ -165,7 +165,7 @@ class ResNetBlockLayer(nn.Module):
         return x
 
 class ResNetUNet(nn.Module):
-    def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int, cuda_device: Union[None, int] = None):
+    def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int, cuda_devices: Optional[List[Union[None, int]]] = None):
         super().__init__()
         self.depth = depth
 
@@ -197,31 +197,46 @@ class ResNetUNet(nn.Module):
             nn.Conv2d(in_channels=n_classes, out_channels=n_classes, kernel_size=3, padding=1)
         )
 
-        self.cuda_device = cuda_device
-        if self.cuda_device is not None:
-            self.cuda(self.cuda_device)
-        #self.decoder = nn.Sequential(Flatten())
-        
-        #out = self.forward(torch.rand(1, in_channels, *in_size))
+        cuda_layer_list = down_layers + up_layers + [self.finish]
+        self.cuda_devices = cuda_devices
+        if self.cuda_devices is not None:
+            device_count = len(self.cuda_devices)
+            split_interval = int(len(cuda_layer_list) / device_count)
+            current_device_index = -1
+            for index, cuda_layer in enumerate(cuda_layer_list):
+                if index % split_interval == 0:
+                    if current_device_index < device_count - 1:
+                        current_device_index += 1
+                    
+                cuda_layer.cuda_device = self.cuda_devices[current_device_index]
+                cuda_layer.cuda(cuda_layer.cuda_device)
 
-        #self.decoder = nn.Sequential(Flatten(), nn.Linear(out.shape[1], n_classes))
+    def move_input_to_layer_device(self, layer, input):
+        if hasattr(layer, 'cuda_device'):
+            input = input.cuda(layer.cuda_device)
+        else:
+            input = input.cpu()
+
+        return input
+
 
     def forward(self, x):
-        x = x.cuda(self.cuda_device)
-        
         shortcuts = []
 
         for i in range(0, len(self.down)):
+            x = self.move_input_to_layer_device(self.down[i], x)
             x = self.down[i](x)
             shortcuts.append(x.detach())
 
         shortcuts.reverse()
 
-        for i in range(0, len(self.up)):
-            x = self.up[i](x, shortcut=shortcuts[i + 1])
+        for i in range(0, len(self.up)):    
+            shortcut = self.move_input_to_layer_device(self.up[i], shortcuts[i + 1])
+            x = self.move_input_to_layer_device(self.up[i], x)
+            x = self.up[i](x, shortcut=shortcut)
 
+        x = self.move_input_to_layer_device(self.finish, x)
         x = self.finish(x)
-        #x = self.decoder(x)
 
         return x
 
