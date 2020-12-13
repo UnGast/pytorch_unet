@@ -11,7 +11,7 @@ from .unet import *
 from .unet_dataset import * 
 import os
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Union, Optional, Dict
 from datetime import datetime
 try:
     import IPython
@@ -61,14 +61,47 @@ class TrainHistoryEntry():
             self.metrics = metrics
         
 class LearnerCheckpoint():
-    def __init__(self, epoch: int, timestamp: datetime, model_id: str, model_state, train_history: [TrainHistoryEntry], last_metrics: {str: int}, metrics_figure: plt.Figure):
+    def __init__(self, epoch: int, timestamp: datetime, model_id: str, model_state, train_history: [TrainHistoryEntry], **kwargs):
         self.epoch = epoch
         self.timestamp = timestamp
         self.model_id = model_id
         self.model_state = model_state
         self.train_history = train_history
-        self.last_metrics = last_metrics
-        self.metrics_figure = metrics_figure
+        self.last_metrics = {}
+        self.extract_last_metrics()
+
+    def get_full_metrics_history(self) -> Optional[Dict[str, float]]:
+        if self.train_history is not None:
+            self.train_history.sort(key=lambda x: x.timestamp)
+            for i in range(-1, -len(self.train_history) - 1, -1):
+                if hasattr(self.train_history[i], 'metrics'):
+                    metrics = self.train_history[i].metrics
+                    return metrics
+
+        return None
+
+    def extract_last_metrics(self):
+        full_metrics = self.get_full_metrics_history()
+        if full_metrics is not None:
+            self.last_metrics = {key: values[-1] for key, values in full_metrics.items()}
+    
+    def make_metrics_figure(self) -> plt.Figure:
+        was_interactive = matplotlib.is_interactive()
+        if was_interactive:
+            plt.ioff()
+
+        figure = plt.figure(figsize=(20, 20))
+        ax = figure.add_subplot()
+
+        metrics = self.get_full_metrics_history()
+        for key, values in metrics.items():
+            ax.plot(list(range(0, len(values))), values, label=key)
+        figure.legend()
+
+        if was_interactive:
+            plt.ion()
+
+        return figure
 
     def save(self, path: Path):
         if not path.exists():
@@ -95,11 +128,11 @@ class LearnerCheckpoint():
                 file.write('{},'.format(value))
             file.write('\n')
 
-        self.metrics_figure.savefig(path/'metrics.png')
+        self.make_metrics_figure().savefig(path/'metrics.png')
 
     @classmethod
     def load(cls, path: Path) -> 'LearnerCheckpoint':
-        result = cls(None, None, None, None, None, None, None)
+        result = cls(None, None, None, None, None)
         
         with open(path/'epoch.txt', 'r') as file: 
             result.epoch = int(file.read())
@@ -109,6 +142,7 @@ class LearnerCheckpoint():
 
         train_history = torch.load(path/'train_history.save')
         result.train_history = train_history
+        result.extract_last_metrics()
         
         result.model_state = torch.load(path/'model.save')
         
@@ -265,10 +299,8 @@ class Learner():
         """
         model_id: since the code for the model is not saved / the layer configuration is not saved, provide some id by which the model can be accessed later
         """
-        last_metrics = {key: values[len(values) - 1] for key, values in self.epoch_metrics.items()}
-        metrics_figure = self.plot_metrics(figsize=(20, 20))
         checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(), model_id=model_id,\
-            model_state=self.model.state_dict(), train_history=self.train_history, last_metrics=last_metrics, metrics_figure=metrics_figure)
+            model_state=self.model.state_dict(), train_history=self.train_history)
         return checkpoint
 
     def load_checkpoint(self, checkpoint: LearnerCheckpoint):
