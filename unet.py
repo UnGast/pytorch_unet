@@ -5,6 +5,7 @@ import torchvision.models
 import math
 from typing import Union, Optional, List
 
+from .gpu_stats import get_gpu_stats
 from .flatten import Flatten
 
 class UNetIntermediary(nn.Module):
@@ -165,9 +166,13 @@ class ResNetBlockLayer(nn.Module):
         return x
 
 class ResNetUNet(nn.Module):
-    def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int, cuda_devices: Optional[List[Union[None, int]]] = None):
+    def __init__(self, in_size: (int, int), in_channels: int, n_classes: int, depth: int, cuda_devices: Optional[List[Union[None, int]]] = None, manual_cuda_split: Optional[List[int]] = None):
         super().__init__()
         self.depth = depth
+
+        current_device_index = -1 
+        if cuda_devices is not None:
+            current_device_index = 0
 
         down_layers = []
         next_in_size = in_size
@@ -199,12 +204,19 @@ class ResNetUNet(nn.Module):
 
         cuda_layer_list = down_layers + up_layers + [self.finish]
         self.cuda_devices = cuda_devices
+        self.manual_cuda_split = manual_cuda_split
         if self.cuda_devices is not None:
+            if self.manual_cuda_split is not None:
+                if len(self.manual_cuda_split) != len(self.cuda_devices):
+                    raise "length of manual_cuda_split needs to be same as length of cuda_devices"
+
             device_count = len(self.cuda_devices)
             split_interval = int(len(cuda_layer_list) / device_count)
             current_device_index = -1
             for index, cuda_layer in enumerate(cuda_layer_list):
-                if index % split_interval == 0:
+                if self.manual_cuda_split is not None and index in self.manual_cuda_split:
+                    current_device_index += 1
+                elif self.manual_cuda_split is None and index % split_interval == 0:
                     if current_device_index < device_count - 1:
                         current_device_index += 1
                     
@@ -219,7 +231,6 @@ class ResNetUNet(nn.Module):
 
         return input
 
-
     def forward(self, x):
         shortcuts = []
 
@@ -230,13 +241,15 @@ class ResNetUNet(nn.Module):
 
         shortcuts.reverse()
 
-        for i in range(0, len(self.up)):    
-            shortcut = self.move_input_to_layer_device(self.up[i], shortcuts[i + 1])
-            x = self.move_input_to_layer_device(self.up[i], x)
-            x = self.up[i](x, shortcut=shortcut)
+        if hasattr(self, 'up'):
+            for i in range(0, len(self.up)):    
+                shortcut = self.move_input_to_layer_device(self.up[i], shortcuts[i + 1])
+                x = self.move_input_to_layer_device(self.up[i], x)
+                x = self.up[i](x, shortcut=shortcut)
 
-        x = self.move_input_to_layer_device(self.finish, x)
-        x = self.finish(x)
+        if hasattr(self, 'finish'):
+            x = self.move_input_to_layer_device(self.finish, x)
+            x = self.finish(x)
 
         return x
 
