@@ -167,8 +167,35 @@ class UNetLearnerCheckpoint(LearnerCheckpoint):
     def load(cls, path: Path) -> 'UNetLearnerCheckpoint':
         return cls(train_results_figure=None, valid_results_figure=None, **LearnerCheckpoint.load(path=path).__dict__)
 
+class LearnerLRPolicy(ABC):
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def get_lr_for(self, epoch: int, batch: int) -> float:
+        pass
+
+class StaticLRPolicy(LearnerLRPolicy):
+    def __init__(self, lr: float):
+        super().__init__()
+        self.lr = lr
+    
+    def get_lr_for(self, epoch: int, batch: int) -> float:
+        return self.lr
+
+class CycleLRPolicy(LearnerLRPolicy):
+    def __init__(self, max_lr: float, step_count: int, fadeout_fraction: float):
+        super().__init__()
+        self.max_lr = max_lr
+        self.step_count = step_count
+        self.fadeout_fraction = fadeout_fraction
+
+    def get_lr_for(self, epoch: int, batch: int) -> float:
+        # TODO: implement one cycle lr policy
+        return self.max_lr
+
 class Learner():
-    def __init__(self, model_id: str, model: nn.Module, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], callback: LearnerCallback=LearnerCallback()):
+    def __init__(self, model_id: str, model: nn.Module, lr_policy: LearnerLRPolicy, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], callback: LearnerCallback=LearnerCallback()):
         self.model_id = model_id
         self.model = model
         self.train_loader = train_loader
@@ -182,6 +209,7 @@ class Learner():
                 metrics[index] = available_metrics[metric]()
         self.metrics = metrics
 
+        self.lr_policy = lr_policy
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.SGD
 
@@ -199,10 +227,13 @@ class Learner():
 
     def train(self, n_epochs: int, lr=0.3e-3, momentum=0.9):
         criterion = nn.CrossEntropyLoss()
-        optimizer = self.optimizer(self.model.parameters(), lr=lr, momentum=momentum)
-        lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
+        optimizer = self.optimizer(self.model.parameters(), lr=1, momentum=momentum)
+        #lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
+        #print("LEARNER LR IS", lr_scheduler)
 
         self.train_history.append(TrainHistoryEntry(epoch=self.current_epoch, timestamp=datetime.now(), hyperparameters=optimizer.state_dict()))
+
+        current_lr = 0
 
         for e in range(self.current_epoch + 1, self.current_epoch + 1 + n_epochs):
             self.current_epoch = e
@@ -227,6 +258,9 @@ class Learner():
 
                 loss = criterion(cpu_prediction, target)
                 loss.backward()
+                current_lr = self.lr_policy.get_lr_for(epoch=e, batch=batch_index)
+                for g in optimizer.param_groups:
+                    g['lr'] = current_lr
                 optimizer.step()
                 
                 total_epoch_metrics['train_loss'] += loss.item()
@@ -236,7 +270,7 @@ class Learner():
 
                 self.callback('batch_end', input=input.cpu(), target=target.cpu(), prediction=cpu_prediction.detach(), loss=loss.item(), epoch=e, batch=batch_index)      
             
-            lr_scheduler.step()
+            #lr_scheduler.step()
 
             epoch_valid_item_count = 0
             if self.valid_loader is not None:
@@ -274,7 +308,7 @@ class Learner():
             for key, value in mean_epoch_metrics.items():
                 print(key, value)
             print('------------------')
-            print('learning rate: {}'.format(lr_scheduler.get_last_lr()))
+            print('learning rate: {}'.format(current_lr))
 
     def plot_metrics(self, **kwargs) -> plt.Figure:
         """
