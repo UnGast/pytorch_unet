@@ -23,6 +23,7 @@ from .lr_policy import *
 from .checkpoint import *
 from .history_entry import *
 from .metrics import *
+from .checkpoint_analyzer import *
 
 class LearnerCallback():
     def __init__(self, epoch_start = None, batch_start = None, batch_end = None, epoch_end = None):
@@ -200,6 +201,7 @@ class Learner():
         creates and saves a new checkpoint
         """
         checkpoint = self.make_checkpoint()
+        print("SAVE NEW CHECKPOINT", checkpoint)
         checkpoint.save(path=path)
 
     def make_checkpoint(self) -> LearnerCheckpoint:
@@ -214,7 +216,18 @@ class Learner():
         """
         loads the checkpoint with the best validation accuracy from the specified directory
         """
-        pass
+        if path.exists():
+            print("ATTEMPT LOAD CHECKPOINT")
+            analyzer = LearnerCheckpointAnalyzer()
+            analyzer.add_all_checkpoints_in_directory(path=path)
+            if len(analyzer.checkpoints) > 0:
+                print("HAVE CHECKPOINT")
+                analyzer.checkpoints.sort(key=lambda x: x.last_metrics['valid_accuracy'])
+                best_checkpoint = analyzer.checkpoints[-1]
+                self.load_checkpoint(best_checkpoint)
+                print("loaded checkpoint from {}".format(path))
+            else:
+                print("warning: called load_best_checkpoint, but there are no checkpoints in the specified directory")
 
     def load_checkpoint(self, checkpoint: LearnerCheckpoint):
         self.current_epoch = checkpoint.epoch

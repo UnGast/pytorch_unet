@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
-from .learner import LearnerCheckpoint
 from typing import Dict, Any
+from .checkpoint import LearnerCheckpoint
 
 class LearnerCheckpointAnalyzer:
     def __init__(self):

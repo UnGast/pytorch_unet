@@ -34,19 +34,26 @@ class TestUnetLearner(unittest.TestCase):
     def test_checkpoint_creation_config(self):
         checkpoints_path = Path(__file__).parent/"test_checkpoints_{}".format(random.randint(0, 1000))
 
-        dataset = MockDataset()
+        try:
+            dataset = MockDataset()
+            
+            def create_learner():
+                return UNetLearner(model_id="test_model_id", model=MockModel(), \
+                lr_policy = StaticLRPolicy(1), train_loader = DataLoader(dataset), \
+                valid_loader = DataLoader(dataset), \
+                checkpoint_config = LearnerCheckpointConfig(epoch_interval=1, path=checkpoints_path))
 
-        learner = UNetLearner(model_id="test_model_id", model=MockModel(), \
-        lr_policy = StaticLRPolicy(1), train_loader = DataLoader(dataset), \
-        valid_loader = DataLoader(dataset), \
-        checkpoint_config = LearnerCheckpointConfig(epoch_interval=1, path=checkpoints_path))
+            learner = create_learner()
+            learner.train(n_epochs=1, log=False)
 
-        learner.train(n_epochs=1, log=False)
+            self.assertTrue(checkpoints_path.exists())
+            self.assertTrue(any(checkpoints_path.iterdir()))
 
-        self.assertTrue(checkpoints_path.exists())
-        self.assertTrue(any(checkpoints_path.iterdir()))
+            learner = create_learner()
 
-        shutil.rmtree(checkpoints_path)
+            self.assertEqual(learner.current_epoch, 0)
+        finally:
+            shutil.rmtree(checkpoints_path)
 
 if __name__ == '__main__':
     unittest.main()
