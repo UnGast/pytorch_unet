@@ -1,8 +1,9 @@
-from abc import ABC, abstractmethod, abstractclassmethod
+from abc import ABC, abstractmethod
 import torch
 
 class Metric(ABC):
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def name(self):
         pass
 

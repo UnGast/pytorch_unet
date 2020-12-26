@@ -1,11 +1,11 @@
 import unittest
 from pathlib import Path
-from ..learner import UNetLearner, StaticLRPolicy, LearnerCheckpointConfig
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import torch
 import random
 import shutil
+from ..learner import *
 
 class MockDataset(Dataset):
     def __len__(self):
@@ -54,6 +54,15 @@ class TestUnetLearner(unittest.TestCase):
             self.assertEqual(learner.current_epoch, 0)
         finally:
             shutil.rmtree(checkpoints_path)
+
+    def test_stop_condition_instantiation_by_name(self):
+        stop_condition = TrainStopCondition.from_name(name="epoch_count", epoch_count=2)
+        self.assertIsInstance(stop_condition, EpochCountTrainStopCondition)
+        self.assertEqual(stop_condition.epoch_count, 2)
+
+        stop_condition = TrainStopCondition.from_name(name="valid_accuracy", valid_accuracy=12)
+        self.assertIsInstance(stop_condition, ValidAccuracyTrainStopCondition)
+        self.assertEqual(stop_condition.valid_accuracy, 12)
 
 if __name__ == '__main__':
     unittest.main()
