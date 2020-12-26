@@ -59,7 +59,12 @@ class TrainHistoryEntry():
         
         if metrics is not None:
             self.metrics = metrics
-        
+
+class LearnerCheckpointConfig():
+    def __init__(self, epoch_interval: int, path: Path):
+        self.epoch_interval = epoch_interval
+        self.path = path
+
 class LearnerCheckpoint():
     def __init__(self, epoch: int, timestamp: datetime, model_id: str, model_state, train_history: [TrainHistoryEntry], **kwargs):
         self.epoch = epoch
@@ -82,8 +87,8 @@ class LearnerCheckpoint():
 
     def extract_last_metrics(self):
         full_metrics = self.get_full_metrics_history()
-        if full_metrics is not None:
-            self.last_metrics = {key: values[-1] for key, values in full_metrics.items()}
+        if full_metrics is not None and len(full_metrics) > 0:
+            self.last_metrics = {key: values[-1] if len(values) > 0 else 0 for key, values in full_metrics.items()}
     
     def make_metrics_figure(self) -> plt.Figure:
         was_interactive = matplotlib.is_interactive()
@@ -195,37 +200,48 @@ class CycleLRPolicy(LearnerLRPolicy):
         return self.max_lr
 
 class Learner():
-    def __init__(self, model_id: str, model: nn.Module, lr_policy: LearnerLRPolicy, train_loader: torch.utils.data.DataLoader, valid_loader: torch.utils.data.DataLoader = None, metrics: [Union[str, Metric]] = [AccuracyMetric()], callback: LearnerCallback=LearnerCallback()):
-        self.model_id = model_id
-        self.model = model
-        self.train_loader = train_loader
-        self.valid_loader = valid_loader
-        self.train_loader = train_loader
-        self.valid_loader = valid_loader
-        
-        available_metrics = {M.name(): M for M in Metric.__subclasses__()}
-        for index, metric in enumerate(metrics):
-            if metric is str:
-                metrics[index] = available_metrics[metric]()
-        self.metrics = metrics
+    def __init__(
+        self, model_id: str, model: nn.Module, \
+        lr_policy: LearnerLRPolicy, train_loader: torch.utils.data.DataLoader, \
+        valid_loader: torch.utils.data.DataLoader = None, \
+        metrics: [Union[str, Metric]] = [AccuracyMetric()],\
+        checkpoint_config: Optional[LearnerCheckpointConfig] = None, \
+        callback: LearnerCallback=LearnerCallback()):
+            self.model_id = model_id
+            self.model = model
+            self.train_loader = train_loader
+            self.valid_loader = valid_loader
+            self.train_loader = train_loader
+            self.valid_loader = valid_loader
+            
+            available_metrics = {M.name(): M for M in Metric.__subclasses__()}
+            for index, metric in enumerate(metrics):
+                if metric is str:
+                    metrics[index] = available_metrics[metric]()
+            self.metrics = metrics
 
-        self.lr_policy = lr_policy
-        self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = optim.SGD
+            self.lr_policy = lr_policy
+            self.criterion = nn.CrossEntropyLoss()
+            self.optimizer = optim.SGD
 
-        self.current_epoch = -1
-        self.epoch_metrics = {
-            'train_loss': [],
-            'valid_loss': []
-        }
-        for metric in self.metrics:
-            self.epoch_metrics['train_' + metric.name()] = []
-            self.epoch_metrics['valid_' + metric.name()] = []
-        self.train_history = []
+            self.current_epoch = -1
+            self.epoch_metrics = {
+                'train_loss': [],
+                'valid_loss': []
+            }
+            for metric in self.metrics:
+                self.epoch_metrics['train_' + metric.name()] = []
+                self.epoch_metrics['valid_' + metric.name()] = []
+            self.train_history = []
 
-        self.callback = callback
+            self.checkpoint_config = checkpoint_config
 
-    def train(self, n_epochs: int, lr=0.3e-3, momentum=0.9):
+            self.callback = callback
+
+            if self.checkpoint_config is not None:
+                self.load_best_checkpoint(path=self.checkpoint_config.path)
+
+    def train(self, n_epochs: int, lr=0.3e-3, momentum=0.9, log: bool = False):
         criterion = nn.CrossEntropyLoss()
         optimizer = self.optimizer(self.model.parameters(), lr=1, momentum=momentum)
         #lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
@@ -258,11 +274,12 @@ class Learner():
 
                 loss = criterion(cpu_prediction, target)
                 loss.backward()
+
                 current_lr = self.lr_policy.get_lr_for(epoch=e, batch=batch_index)
                 for g in optimizer.param_groups:
                     g['lr'] = current_lr
                 optimizer.step()
-                
+
                 total_epoch_metrics['train_loss'] += loss.item()
                 for metric in self.metrics:
                     total_epoch_metrics['train_' + metric.name()] += metric.calculate(prediction=cpu_prediction.detach(), target=target.cpu())
@@ -298,17 +315,21 @@ class Learner():
 
             self.train_history.append(TrainHistoryEntry(epoch=self.current_epoch, timestamp=datetime.now(), metrics=self.epoch_metrics))
 
+            if self.checkpoint_config is not None and e % self.checkpoint_config.epoch_interval == 0:
+                self.save_new_checkpoint(path=self.checkpoint_config.path/"epoch_{}".format(e))
+
             self.callback('epoch_end', metrics=mean_epoch_metrics, epoch=e)
 
-            try:
-                IPython.display.clear_output()
-            except:
-                pass
-            print("Epoch", e)
-            for key, value in mean_epoch_metrics.items():
-                print(key, value)
-            print('------------------')
-            print('learning rate: {}'.format(current_lr))
+            if log:
+                try:
+                    IPython.display.clear_output()
+                except:
+                    pass
+                print("Epoch", e)
+                for key, value in mean_epoch_metrics.items():
+                    print(key, value)
+                print('------------------')
+                print('learning rate: {}'.format(current_lr))
 
     def plot_metrics(self, **kwargs) -> plt.Figure:
         """
@@ -333,6 +354,13 @@ class Learner():
     def predict(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
     
+    def save_new_checkpoint(self, path: Path):
+        """
+        creates and saves a new checkpoint
+        """
+        checkpoint = self.make_checkpoint()
+        checkpoint.save(path=path)
+
     def make_checkpoint(self) -> LearnerCheckpoint:
         """
         model_id: since the code for the model is not saved / the layer configuration is not saved, provide some id by which the model can be accessed later
@@ -340,6 +368,12 @@ class Learner():
         checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(), model_id=self.model_id,\
             model_state=self.model.state_dict(), train_history=self.train_history)
         return checkpoint
+
+    def load_best_checkpoint(self, path: Path):
+        """
+        loads the checkpoint with the best validation accuracy from the specified directory
+        """
+        pass
 
     def load_checkpoint(self, checkpoint: LearnerCheckpoint):
         self.current_epoch = checkpoint.epoch
@@ -359,6 +393,8 @@ class UNetLearner(Learner):
     def make_checkpoint(self) -> UNetLearnerCheckpoint:
         checkpoint = super().make_checkpoint()
         train_results_figure = self.show_results(self.train_loader, n_items=5, figsize=(20, 20))
+        if self.valid_loader is None:
+            raise AssertionError("valid_loader needs to be set in order to create a checkpoint")
         valid_results_figure = self.show_results(self.valid_loader, n_items=5, figsize=(20, 20))
         checkpoint = UNetLearnerCheckpoint(train_results_figure=train_results_figure, valid_results_figure=valid_results_figure, **checkpoint.__dict__)
         return checkpoint
