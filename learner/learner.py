@@ -24,6 +24,7 @@ from .checkpoint import *
 from .history_entry import *
 from .metrics import *
 from .checkpoint_analyzer import *
+from .train_stop_condition import *
 
 class LearnerCallback():
     def __init__(self, epoch_start = None, batch_start = None, batch_end = None, epoch_end = None):
@@ -83,7 +84,7 @@ class Learner():
             if self.checkpoint_config is not None:
                 self.load_best_checkpoint(path=self.checkpoint_config.path)
 
-    def train(self, n_epochs: int, lr=0.3e-3, momentum=0.9, log: bool = False):
+    def train(self, stop_condition: TrainStopCondition, lr=0.3e-3, momentum=0.9, log: bool = False):
         criterion = nn.CrossEntropyLoss()
         optimizer = self.optimizer(self.model.parameters(), lr=1, momentum=momentum)
         #lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
@@ -93,7 +94,9 @@ class Learner():
 
         current_lr = 0
 
-        for e in range(self.current_epoch + 1, self.current_epoch + 1 + n_epochs):
+        e = self.current_epoch
+        while not stop_condition.fulfilled(epoch=e, full_metrics=self.epoch_metrics):# for e in range(self.current_epoch + 1, self.current_epoch + 1 + n_epochs):
+            e += 1
             self.current_epoch = e
             self.callback('epoch_start', e)
 
@@ -125,12 +128,10 @@ class Learner():
                 total_epoch_metrics['train_loss'] += loss.item()
                 for metric in self.metrics:
                     total_epoch_metrics['train_' + metric.name()] += metric.calculate(prediction=cpu_prediction.detach(), target=target.cpu())
-                epoch_train_item_count += len(batch)
+                epoch_train_item_count += 1
 
                 self.callback('batch_end', input=input.cpu(), target=target.cpu(), prediction=cpu_prediction.detach(), loss=loss.item(), epoch=e, batch=batch_index)      
             
-            #lr_scheduler.step()
-
             epoch_valid_item_count = 0
             if self.valid_loader is not None:
                 with torch.no_grad():
@@ -144,7 +145,7 @@ class Learner():
                         total_epoch_metrics['valid_loss'] += loss.item() 
                         for metric in self.metrics:
                             total_epoch_metrics['valid_' + metric.name()] += metric.calculate(prediction=prediction, target=target)
-                        epoch_valid_item_count += len(batch)
+                        epoch_valid_item_count += 1
             
             mean_epoch_metrics = {}
             for key, value in total_epoch_metrics.items():
