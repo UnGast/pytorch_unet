@@ -8,10 +8,9 @@ import torch
 from .history_entry import *
 
 class LearnerCheckpoint():
-    def __init__(self, epoch: int, timestamp: datetime, model_id: str, model_state, train_history: [TrainHistoryEntry], **kwargs):
+    def __init__(self, epoch: int, timestamp: datetime, model_state, train_history: [TrainHistoryEntry], **kwargs):
         self.epoch = epoch
         self.timestamp = timestamp
-        self.model_id = model_id
         self.model_state = model_state
         self.train_history = train_history
         self.last_metrics = {}
@@ -63,10 +62,6 @@ class LearnerCheckpoint():
         with open(path/'timestamp.txt', 'w') as file:
             file.write(str(self.timestamp))
 
-        model_id_info_path = path/'model.txt'
-        with open(path/'model.txt', 'w') as f:
-            f.write(self.model_id)
-
         with open((path/'metrics.csv'), 'w') as file:
             for key in self.last_metrics.keys():
                 file.write('{},'.format(key))
@@ -81,9 +76,6 @@ class LearnerCheckpoint():
     def load(cls, path: Path) -> 'LearnerCheckpoint':
         result = cls(None, None, None, None, None)
 
-        with open(path/'model.txt', 'r') as file:
-            result.model_id = file.read()
-        
         with open(path/'epoch.txt', 'r') as file: 
             result.epoch = int(file.read())
 

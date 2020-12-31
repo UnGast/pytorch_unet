@@ -44,13 +44,12 @@ class LearnerCheckpointConfig():
 
 class Learner():
     def __init__(
-        self, model_id: str, model: nn.Module, \
+        self, model: nn.Module, \
         lr_policy: LearnerLRPolicy, train_loader: torch.utils.data.DataLoader, \
         valid_loader: torch.utils.data.DataLoader = None, \
         metrics: [Union[str, Metric]] = [AccuracyMetric()],\
         checkpoint_config: Optional[LearnerCheckpointConfig] = None, \
         callback: LearnerCallback=LearnerCallback()):
-            self.model_id = model_id
             self.model = model
             self.train_loader = train_loader
             self.valid_loader = valid_loader
@@ -81,10 +80,19 @@ class Learner():
 
             self.callback = callback
 
+            self.logging_enabled = True
+
             if self.checkpoint_config is not None:
                 self.load_best_checkpoint(path=self.checkpoint_config.path)
 
+    def log(self, *args, **kwargs):
+        if self.logging_enabled:
+            print(*args, **kwargs)
+
     def train(self, stop_condition: TrainStopCondition, lr=0.3e-3, momentum=0.9, log: bool = False):
+        previous_logging_enabled = self.logging_enabled
+        self.logging_enabled = log
+
         criterion = nn.CrossEntropyLoss()
         optimizer = self.optimizer(self.model.parameters(), lr=1, momentum=momentum)
         #lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
@@ -168,11 +176,13 @@ class Learner():
                     IPython.display.clear_output()
                 except:
                     pass
-                print("Epoch", e)
+                self.log("Epoch", e)
                 for key, value in mean_epoch_metrics.items():
-                    print(key, value)
-                print('------------------')
-                print('learning rate: {}'.format(current_lr))
+                    self.log(key, value)
+                self.log('------------------')
+                self.log('learning rate: {}'.format(current_lr))
+        
+        self.logging_enabled = previous_logging_enabled
 
     def plot_metrics(self, **kwargs) -> plt.Figure:
         """
@@ -202,14 +212,11 @@ class Learner():
         creates and saves a new checkpoint
         """
         checkpoint = self.make_checkpoint()
-        print("SAVE NEW CHECKPOINT", checkpoint)
         checkpoint.save(path=path)
+        self.log("saved new checkpoint to", path=path)
 
     def make_checkpoint(self) -> LearnerCheckpoint:
-        """
-        model_id: since the code for the model is not saved / the layer configuration is not saved, provide some id by which the model can be accessed later
-        """
-        checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(), model_id=self.model_id,\
+        checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(),\
             model_state=self.model.state_dict(), train_history=self.train_history)
         return checkpoint
 
@@ -218,17 +225,15 @@ class Learner():
         loads the checkpoint with the best validation accuracy from the specified directory
         """
         if path.exists():
-            print("ATTEMPT LOAD CHECKPOINT")
             analyzer = LearnerCheckpointAnalyzer()
             analyzer.add_all_checkpoints_in_directory(path=path)
             if len(analyzer.checkpoints) > 0:
-                print("HAVE CHECKPOINT")
                 analyzer.checkpoints.sort(key=lambda x: x.last_metrics['valid_accuracy'])
                 best_checkpoint = analyzer.checkpoints[-1]
                 self.load_checkpoint(best_checkpoint)
-                print("loaded checkpoint from {}".format(path))
+                self.log("loaded checkpoint from {}".format(path))
             else:
-                print("warning: called load_best_checkpoint, but there are no checkpoints in the specified directory")
+                self.log("warning: called load_best_checkpoint, but there are no checkpoints in the specified directory")
 
     def load_checkpoint(self, checkpoint: LearnerCheckpoint):
         self.current_epoch = checkpoint.epoch

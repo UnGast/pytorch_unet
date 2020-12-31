@@ -20,10 +20,7 @@ class LearnerCheckpointAnalyzer:
             if checkpoint_path.is_dir():
                 self.add_checkpoint(path=checkpoint_path)
 
-    def make_model_groups(self) -> Dict[str, LearnerCheckpoint]:
-        """
-        Return a dictionary of checkpoints grouped (keyed) by model ids.
-        """
+    """def make_model_groups(self) -> Dict[str, LearnerCheckpoint]:
         groups = {}
         for checkpoint in self.checkpoints:
             if not checkpoint.model_id in groups:
@@ -31,7 +28,7 @@ class LearnerCheckpointAnalyzer:
 
             groups[checkpoint.model_id].append(checkpoint)
         
-        return groups
+        return groups"""
 
     def extract_checkpoint_overview_data(self, checkpoint: LearnerCheckpoint) -> Dict[str, Any]:
         data = {'epoch': checkpoint.epoch}
@@ -43,22 +40,10 @@ class LearnerCheckpointAnalyzer:
         show the best checkpoints and associated data for each model
         max_checkpoints: 0 to disable, n > 0 to limit number of outputted checkpoints per model
         """
-        groups = self.make_model_groups()
+        prepared = sorted(self.checkpoints, key=lambda x: x.last_metrics[comparison_metric])
+        if max_checkpoints > 0:
+            prepared = prepared[max(0, len(prepared) - max_checkpoints):len(prepared)]
 
-        def prepare_overview_checkpoints(checkpoints):
-            prepared = sorted(checkpoints, key=lambda x: x.last_metrics[comparison_metric])
-            if max_checkpoints > 0:
-                prepared = prepared[max(0, len(prepared) - max_checkpoints):len(prepared)]
-            return prepared
+        data = pd.DataFrame([self.extract_checkpoint_overview_data(checkpoint) for checkpoint in prepared])
 
-        displayed_checkpoints = {model_id: prepare_overview_checkpoints(checkpoints) for model_id, checkpoints in groups.items()}
-
-        tables = {}
-        
-        for model_id, checkpoints in displayed_checkpoints.items():
-            data = pd.DataFrame([self.extract_checkpoint_overview_data(checkpoint) for checkpoint in checkpoints])
-            tables[model_id] = data
-
-        for model_id, table in tables.items():
-            print("model: {}".format(model_id))
-            print(table)
+        print(data)
