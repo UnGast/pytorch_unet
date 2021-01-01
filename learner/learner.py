@@ -87,7 +87,7 @@ class Learner():
 
     def log(self, *args, **kwargs):
         if self.logging_enabled:
-            print(*args, **kwargs)
+            print('LEARNER:::::::::', *args, **kwargs)
 
     def train(self, stop_condition: TrainStopCondition, lr=0.3e-3, momentum=0.9, log: bool = False):
         previous_logging_enabled = self.logging_enabled
@@ -228,10 +228,10 @@ class Learner():
             analyzer = LearnerCheckpointAnalyzer()
             analyzer.add_all_checkpoints_in_directory(path=path)
             if len(analyzer.checkpoints) > 0:
+                self.log("loading checkpoint from {}".format(path))
                 analyzer.checkpoints.sort(key=lambda x: x.last_metrics['valid_accuracy'])
                 best_checkpoint = analyzer.checkpoints[-1]
                 self.load_checkpoint(best_checkpoint)
-                self.log("loaded checkpoint from {}".format(path))
             else:
                 self.log("warning: called load_best_checkpoint, but there are no checkpoints in the specified directory")
 
@@ -248,6 +248,8 @@ class Learner():
                 if entry.timestamp > most_recent_timestamp:
                     most_recent_timestamp = entry.timestamp
                     self.epoch_metrics = entry.metrics
+
+        self.log("loaded checkpoint at epoch:", checkpoint.epoch)
 
 class UNetLearner(Learner):
     def make_checkpoint(self) -> UNetLearnerCheckpoint:
