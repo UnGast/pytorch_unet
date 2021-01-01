@@ -16,14 +16,21 @@ class StaticLRPolicy(LearnerLRPolicy):
     def get_lr_for(self, epoch: int, batch: int) -> float:
         return self.lr
 
-class CycleLRPolicy(LearnerLRPolicy):
-    def __init__(self, max_lr: float, step_count: int, fadeout_fraction: float):
+class OneCycleLRPolicy(LearnerLRPolicy):
+    def __init__(self, max_lr: float, step_count: int, fadeout_fraction: float=0.1):
         super().__init__()
         self.max_lr = max_lr
+        self.start_lr = self.max_lr / 10
+        self.end_lr = self.start_lr / 10
         self.step_count = step_count
         self.fadeout_fraction = fadeout_fraction
+        self.peak_count = (self.step_count * (1 - self.fadeout_fraction)) / 2
+        self.fadeout_count = self.step_count * (1 - self.fadeout_fraction)
 
     def get_lr_for(self, epoch: int, batch: int) -> float:
-        # TODO: implement one cycle lr policy
-        return self.max_lr
-
+        if epoch < self.peak_count:
+            return self.start_lr + (self.max_lr - self.start_lr) * (epoch / self.peak_count)
+        elif epoch < self.fadeout_count:
+            return self.max_lr - (self.max_lr - self.start_lr) * ((epoch - self.peak_count) / (self.fadeout_count - self.peak_count))
+        else:
+            return self.start_lr - (self.start_lr - self.end_lr) * ((epoch - self.fadeout_count) / (self.step_count - self.fadeout_count))

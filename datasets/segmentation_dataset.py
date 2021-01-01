@@ -98,18 +98,3 @@ class SegmentationTestDataset(SegmentationDataset):
     
     def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
         return self.items[index]
-"""
-if __name__ == '__main__':
-  import sys
-  import argparse
-  parser = argparse.ArgumentParser()
-  parser.add_argument('path', type=str, help='the root directory of the dataset')
-  parser.add_argument('part', type=str, choices=[DatasetPart.Train, DatasetPart.Valid])
-  args = parser.parse_args()
-  dataset = UNetDataset(root_dir=Path(args.path), part=args.part)
-  print('dataset length', len(dataset))
-  print('classes', dataset.classes)
-  print('item size', dataset.item_size)
-  print('image shape', dataset[0][0].shape)
-  print('mask shape', dataset[0][1].shape)
-  """

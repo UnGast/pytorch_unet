@@ -2,6 +2,7 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 import os
 import time
+from typing import Optional
 
 class ExperimentPart(ABC):
     def __init__(self, id: str):
@@ -23,11 +24,17 @@ class Experiment(ABC):
     def __init__(self, root_dir_path: Path):
         self.root_dir_path = root_dir_path
         self.current_part = None
+
+    def setup(self, root_dir_path: Optional[Path]):
+        if root_dir_path is not None:
+            self.root_dir_path = root_dir_path
+
         if self.root_dir_path.exists():
             try:
                 self.load_state()
             except Exception as e:
                 self.log("tried to load experiment state, failed", e)
+
 
     @abstractmethod
     def get_next_part(self):
