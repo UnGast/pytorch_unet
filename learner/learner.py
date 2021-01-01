@@ -7,8 +7,6 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn as nn
 import numpy as np
-from ..unet import *
-from ..unet_dataset import * 
 import os
 from abc import ABC, abstractmethod
 from typing import Union, Optional, Dict
@@ -25,6 +23,7 @@ from .history_entry import *
 from .metrics import *
 from .checkpoint_analyzer import *
 from .train_stop_condition import *
+from ..unet import *
 
 class LearnerCallback():
     def __init__(self, epoch_start = None, batch_start = None, batch_end = None, epoch_end = None):
@@ -89,7 +88,7 @@ class Learner():
         if self.logging_enabled:
             print('LEARNER:::::::::', *args, **kwargs)
 
-    def train(self, stop_condition: TrainStopCondition, lr=0.3e-3, momentum=0.9, log: bool = False):
+    def train(self, stop_condition: TrainStopCondition, lr=0.3e-3, momentum=0.9, log: bool = True):
         previous_logging_enabled = self.logging_enabled
         self.logging_enabled = log
 
@@ -179,9 +178,11 @@ class Learner():
                 self.log("Epoch", e)
                 for key, value in mean_epoch_metrics.items():
                     self.log(key, value)
-                self.log('------------------')
                 self.log('learning rate: {}'.format(current_lr))
-        
+                self.log('------------------')
+
+        self.save_new_checkpoint(path=self.checkpoint_config.path/"epoch_{}".format(self.current_epoch))
+
         self.logging_enabled = previous_logging_enabled
 
     def plot_metrics(self, **kwargs) -> plt.Figure:
@@ -213,7 +214,7 @@ class Learner():
         """
         checkpoint = self.make_checkpoint()
         checkpoint.save(path=path)
-        self.log("saved new checkpoint to", path=path)
+        self.log("saved new checkpoint to", path)
 
     def make_checkpoint(self) -> LearnerCheckpoint:
         checkpoint = LearnerCheckpoint(epoch=self.current_epoch, timestamp=datetime.now(),\
