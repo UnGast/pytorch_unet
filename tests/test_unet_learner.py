@@ -36,7 +36,7 @@ class TestUnetLearner(unittest.TestCase):
             dataset = MockDataset()
             
             def create_learner():
-                return UNetLearner(model_id="test_model_id", model=MockModel(), \
+                return UNetLearner(model=MockModel(), \
                 lr_policy = StaticLRPolicy(1), train_loader = DataLoader(dataset), \
                 valid_loader = DataLoader(dataset), \
                 checkpoint_config = LearnerCheckpointConfig(epoch_interval=1, path=checkpoints_path))
@@ -75,7 +75,7 @@ class TestUnetLearner(unittest.TestCase):
     def test_epoch_count_train_stop_condition_in_action(self):
         dataset = MockDataset(target=torch.ones((10, 10)))
         
-        learner = UNetLearner(model_id="test_model_id", model=MockModel(output=torch.ones((3, 10, 10))), \
+        learner = UNetLearner(model=MockModel(output=torch.ones((3, 10, 10))), \
             lr_policy=StaticLRPolicy(1), train_loader=DataLoader(dataset))
 
         learner.train(stop_condition=EpochCountTrainStopCondition(epoch_count=3), log=False)
@@ -88,7 +88,7 @@ class TestUnetLearner(unittest.TestCase):
         def handle_epoch_end(epoch: int, metrics):
             learner.model.output = torch.stack([torch.zeros(10, 10), torch.ones(10, 10), torch.zeros(10, 10)], dim=0)
 
-        learner = UNetLearner(model_id="test_model_id", model=MockModel(output=torch.zeros((3, 10, 10))), \
+        learner = UNetLearner(model=MockModel(output=torch.zeros((3, 10, 10))), \
             lr_policy=StaticLRPolicy(1), train_loader=DataLoader(dataset), valid_loader=DataLoader(dataset), \
             callback=LearnerCallback(epoch_end=handle_epoch_end))
 

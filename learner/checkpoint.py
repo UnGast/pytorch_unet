@@ -74,7 +74,7 @@ class LearnerCheckpoint():
 
     @classmethod
     def load(cls, path: Path) -> 'LearnerCheckpoint':
-        result = cls(None, None, None, None, None)
+        result = cls(None, None, None, None)
 
         with open(path/'epoch.txt', 'r') as file: 
             result.epoch = int(file.read())
