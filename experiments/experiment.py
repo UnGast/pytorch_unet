@@ -2,6 +2,7 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 import os
 import time
+import shutil
 from typing import Optional
 
 class ExperimentPart(ABC):
@@ -21,15 +22,17 @@ class ExperimentPart(ABC):
         print("EXPERIMENT PART:", *args, **kwargs)
     
 class Experiment(ABC):
-    def __init__(self, root_dir_path: Path):
+    def __init__(self, root_dir_path: Optional[Path] = None):
         self.root_dir_path = root_dir_path
         self.current_part = None
 
-    def setup(self, root_dir_path: Optional[Path]):
+    def setup(self, root_dir_path: Optional[Path], reset: bool = False):
         if root_dir_path is not None:
             self.root_dir_path = root_dir_path
 
-        if self.root_dir_path.exists():
+        if reset:
+            shutil.rmtree(self.root_dir_path)
+        elif self.root_dir_path.exists():
             try:
                 self.load_state()
             except Exception as e:
