@@ -181,7 +181,8 @@ class Learner():
                 self.log('learning rate: {}'.format(current_lr))
                 self.log('------------------')
 
-        self.save_new_checkpoint(path=self.checkpoint_config.path/"epoch_{}".format(self.current_epoch))
+        if self.checkpoint_config is not None:
+            self.save_new_checkpoint(path=self.checkpoint_config.path/"epoch_{}".format(self.current_epoch))
 
         self.logging_enabled = previous_logging_enabled
 
@@ -259,7 +260,7 @@ class UNetLearner(Learner):
         if self.valid_loader is None:
             raise AssertionError("valid_loader needs to be set in order to create a checkpoint")
         valid_results_figure = self.show_results(self.valid_loader, n_items=5, figsize=(20, 20))
-        checkpoint = UNetLearnerCheckpoint(train_results_figure=train_results_figure, valid_results_figure=valid_results_figure, **checkpoint.__dict__)
+        checkpoint = UNetLearnerCheckpoint(train_results_figure=train_results_figure, valid_results_figure=valid_results_figure, **checkpoint.__dict__, model_state=checkpoint.model_state)
         return checkpoint
 
     def show_results(self, dataloader: DataLoader, n_items: int, figsize: (int, int)=None) -> plt.Figure:
@@ -274,7 +275,7 @@ class UNetLearner(Learner):
                 abs_item_index = 0
                 for batch_index, batch in enumerate(dataloader):
                     batch_input = batch[0]
-                    batch_target = batch[0]
+                    batch_target = batch[1]
                     batch_prediction = torch.argmax(self.model(batch_input.cuda()).cpu(), dim=1).type(torch.FloatTensor)
                     
                     for item_index in range(0, batch_input.shape[0]):
@@ -285,7 +286,7 @@ class UNetLearner(Learner):
 
                         axes[abs_item_index][0].imshow(input.permute(1, 2, 0).squeeze())
                         axes[abs_item_index][0].set_title('input')
-                        axes[abs_item_index][1].imshow(target.permute(1, 2, 0).squeeze())
+                        axes[abs_item_index][1].imshow(target)
                         axes[abs_item_index][1].set_title('target')
                         axes[abs_item_index][2].imshow(prediction.squeeze())
                         axes[abs_item_index][2].set_title('prediction')

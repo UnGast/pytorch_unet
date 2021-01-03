@@ -31,12 +31,13 @@ class OneCycleLRPolicy(LearnerLRPolicy):
         self.fadeout_count = self.step_count * (1 - self.fadeout_fraction)
 
     def get_lr_for(self, epoch: int, batch: int) -> float:
-        if epoch < self.peak_count:
-            return self.start_lr + (self.max_lr - self.start_lr) * (epoch / self.peak_count)
-        elif epoch < self.fadeout_count:
-            return self.max_lr - (self.max_lr - self.start_lr) * ((epoch - self.peak_count) / (self.fadeout_count - self.peak_count))
+        cycle_step = epoch % self.step_count
+        if cycle_step < self.peak_count:
+            return self.start_lr + (self.max_lr - self.start_lr) * (cycle_step / self.peak_count)
+        elif cycle_step < self.fadeout_count:
+            return self.max_lr - (self.max_lr - self.start_lr) * ((cycle_step - self.peak_count) / (self.fadeout_count - self.peak_count))
         else:
-            return self.start_lr - (self.start_lr - self.end_lr) * ((epoch - self.fadeout_count) / (self.step_count - self.fadeout_count))
+            return self.start_lr - (self.start_lr - self.end_lr) * ((cycle_step - self.fadeout_count) / (self.step_count - self.fadeout_count))
 
     def __str__(self):
         return "OneCycleLRPolicy { max_lr: {}, step_count: {}, fadeout_fraction: {} }".format(self.max_lr, self.step_count, self.fadeout_fraction)

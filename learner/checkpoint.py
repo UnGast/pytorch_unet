@@ -20,7 +20,7 @@ class LearnerCheckpoint():
     @property
     def model_state(self):
         if self._model_state is not None:
-            return self.model_state
+            return self._model_state
         elif self._load_model_state is not None:
             self._model_state = self._load_model_state()
             return self._model_state
