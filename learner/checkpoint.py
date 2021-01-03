@@ -11,10 +11,21 @@ class LearnerCheckpoint():
     def __init__(self, epoch: int, timestamp: datetime, model_state, train_history: [TrainHistoryEntry], **kwargs):
         self.epoch = epoch
         self.timestamp = timestamp
-        self.model_state = model_state
+        self._model_state = model_state
+        self._load_model_state = None
         self.train_history = train_history
         self.last_metrics = {}
         self.extract_last_metrics()
+
+    @property
+    def model_state(self):
+        if self._model_state is not None:
+            return self.model_state
+        elif self._load_model_state is not None:
+            self._model_state = self._load_model_state()
+            return self._model_state
+        else:
+            return None
 
     def get_full_metrics_history(self) -> Optional[Dict[str, float]]:
         if self.train_history is not None:
@@ -86,7 +97,7 @@ class LearnerCheckpoint():
         result.train_history = train_history
         result.extract_last_metrics()
         
-        result.model_state = torch.load(path/'model.save')
+        result._load_model_state = lambda: torch.load(path/'model.save')
         
         return result
 
