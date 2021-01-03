@@ -16,8 +16,8 @@ class StaticLRPolicy(LearnerLRPolicy):
     def get_lr_for(self, epoch: int, batch: int) -> float:
         return self.lr
 
-    def __str__(self):
-        return "StaticLRPolicy { lr: {} }".format(self.lr)
+    def __repr__(self):
+        return "StaticLRPolicy {{ lr: {} }}".format(self.lr)
 
 class OneCycleLRPolicy(LearnerLRPolicy):
     def __init__(self, max_lr: float, step_count: int, fadeout_fraction: float=0.1):
@@ -39,5 +39,5 @@ class OneCycleLRPolicy(LearnerLRPolicy):
         else:
             return self.start_lr - (self.start_lr - self.end_lr) * ((cycle_step - self.fadeout_count) / (self.step_count - self.fadeout_count))
 
-    def __str__(self):
-        return "OneCycleLRPolicy { max_lr: {}, step_count: {}, fadeout_fraction: {} }".format(self.max_lr, self.step_count, self.fadeout_fraction)
+    def __repr__(self):
+        return "OneCycleLRPolicy {{ max_lr: {}, step_count: {}, fadeout_fraction: {} }}".format(self.max_lr, self.step_count, self.fadeout_fraction)

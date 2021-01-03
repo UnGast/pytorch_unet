@@ -43,18 +43,20 @@ class LearnerCheckpointConfig():
 
 class Learner():
     def __init__(
-        self, model: nn.Module, \
-        lr_policy: LearnerLRPolicy, train_loader: torch.utils.data.DataLoader, \
+        self, model: nn.Module,\
+        lr_policy: LearnerLRPolicy,\
+        train_loader: torch.utils.data.DataLoader,\
         valid_loader: torch.utils.data.DataLoader = None, \
+        loss_fn = nn.CrossEntropyLoss(),\
         metrics: [Union[str, Metric]] = [AccuracyMetric()],\
-        checkpoint_config: Optional[LearnerCheckpointConfig] = None, \
+        checkpoint_config: Optional[LearnerCheckpointConfig] = None,\
         callback: LearnerCallback=LearnerCallback()):
             self.model = model
             self.train_loader = train_loader
             self.valid_loader = valid_loader
             self.train_loader = train_loader
             self.valid_loader = valid_loader
-            
+
             available_metrics = {M.name(): M for M in Metric.__subclasses__()}
             for index, metric in enumerate(metrics):
                 if metric is str:
@@ -62,7 +64,7 @@ class Learner():
             self.metrics = metrics
 
             self.lr_policy = lr_policy
-            self.criterion = nn.CrossEntropyLoss()
+            self.loss_fn = loss_fn 
             self.optimizer = optim.SGD
 
             self.current_epoch = -1
@@ -92,7 +94,6 @@ class Learner():
         previous_logging_enabled = self.logging_enabled
         self.logging_enabled = log
 
-        criterion = nn.CrossEntropyLoss()
         optimizer = self.optimizer(self.model.parameters(), lr=1, momentum=momentum)
         #lr_scheduler = OneCycleLR(optimizer, max_lr=lr, total_steps=n_epochs)
         #print("LEARNER LR IS", lr_scheduler)
@@ -124,7 +125,7 @@ class Learner():
                 prediction = self.model(input)
                 cpu_prediction = prediction.cpu()
 
-                loss = criterion(cpu_prediction, target)
+                loss = self.loss_fn(cpu_prediction, target)
                 loss.backward()
 
                 current_lr = self.lr_policy.get_lr_for(epoch=e, batch=batch_index)
@@ -147,7 +148,7 @@ class Learner():
                         
                         prediction = self.model(input).cpu()
                         
-                        loss = criterion(prediction, target)
+                        loss = self.loss_fn(prediction, target)
                     
                         total_epoch_metrics['valid_loss'] += loss.item() 
                         for metric in self.metrics:
