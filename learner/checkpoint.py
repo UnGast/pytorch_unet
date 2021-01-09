@@ -107,6 +107,10 @@ class UNetLearnerCheckpoint(LearnerCheckpoint):
         self.train_results_figure = train_results_figure
         self.valid_results_figure = valid_results_figure
 
+    def __del__(self):
+        plt.close(self.train_results_figure)
+        plt.close(self.valid_results_figure)
+
     def save(self, path: Path):
         super().save(path=path)
 
