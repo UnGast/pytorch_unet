@@ -16,7 +16,6 @@ try:
 except Exception as e:
     print(e)
 
-from .one_cycle_lr import OneCycleLR
 from .lr_policy import *
 from .checkpoint import *
 from .history_entry import *

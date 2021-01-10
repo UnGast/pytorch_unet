@@ -18,7 +18,7 @@ class SegmentationDataset(Dataset):
   """
   a dataset where items are of shape (image: torch.Tensor, mask: torch.Tensor)
   """
-  def __init__(self, root_dir: Path, part: DatasetPart, image_extension='png', mask_extension='png'):
+  def __init__(self, root_dir: Path, part: DatasetPart, image_extension='png', mask_extension='png', transforms=[]):
     self.root_dir = root_dir
     self.images_dir = root_dir/part/'images'
     self.masks_dir = root_dir/part/'masks'
@@ -30,6 +30,8 @@ class SegmentationDataset(Dataset):
     self.filenames = [file_path.name for file_path in self.images_dir.glob('*.{}'.format(image_extension))]
     self.filenames = [file_path.name for file_path in self.masks_dir.glob('*.{}'.format(mask_extension)) if file_path.name in self.filenames]
 
+    self.transforms = transforms
+
     self.mask_channels = 1
     if len(self.filenames) > 0:
       image, _ = self[0]
@@ -39,10 +41,17 @@ class SegmentationDataset(Dataset):
   def __len__(self):
     return len(self.filenames)
 
+  def transform(self, partial: torch.Tensor):
+    for transform in self.transforms:
+      partial = transform(partial)
+    return partial
+
   def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
     image = PIL.Image.open(str(self.images_dir/self.filenames[index]))
+    image = self.transform(image)
     image = transforms.ToTensor()(image)
     mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
+    mask = self.transform(mask)
     mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.LongTensor) # use this approach to prevent transforms.ToTensor converting everything to floats
     return (image, mask)
 
