@@ -1,4 +1,5 @@
 from enum import Enum
+import functools
 import numpy as np
 import torch
 from torch import Tensor
@@ -9,6 +10,7 @@ from fastcore.basics import *
 from fastcore.xtras import *
 from fastcore.dispatch import * 
 from fastcore.meta import *
+from ..utils import *
 
 def apply(func, x, *args, **kwargs):
     "Apply `func` recursively to `x`, passing on args"
@@ -17,7 +19,34 @@ def apply(func, x, *args, **kwargs):
     res = func(x, *args, **kwargs)
     return res if x is None else retain_type(res, x)
 
-# Cell
+norm_types = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.InstanceNorm1d, nn.InstanceNorm2d, nn.InstanceNorm3d, nn.LayerNorm)
+
+def init_default(m, func=nn.init.kaiming_normal_):
+    "Initialize `m` weights with `func` and set `bias` to 0."
+    if func:
+        if hasattr(m, 'weight'): func(m.weight)
+        if hasattr(m, 'bias') and hasattr(m.bias, 'data'): m.bias.data.fill_(0.)
+    return m
+
+def requires_grad(m):
+    "Check if the first parameter of `m` requires grad or not"
+    ps = list(m.parameters())
+    return ps[0].requires_grad if len(ps)>0 else False
+
+def cond_init(m, func):
+    "Apply `init_default` to `m` unless it's a batchnorm module"
+    if (not isinstance(m, norm_types)) and requires_grad(m): init_default(m, func)
+
+def apply_leaf(m, f):
+    "Apply `f` to children of `m`."
+    c = m.children()
+    if isinstance(m, nn.Module): f(m)
+    for l in c: apply_leaf(l,f)
+
+def apply_init(m, func=nn.init.kaiming_normal_):
+    "Initialize all non-batchnorm layers of `m` with `func`."
+    apply_leaf(m, functools.partial(cond_init, func=func))
+
 def maybe_gather(x, axis=0):
     "Gather copies of `x` on `axis` (if training is distributed)"
     if num_distrib()<=1: return x
@@ -26,7 +55,6 @@ def maybe_gather(x, axis=0):
     torch.distributed.all_gather(res, x.contiguous() if ndim > 0 else x[None])
     return torch.cat(res, dim=axis) if ndim > 0 else torch.cat(res, dim=axis).mean()
 
-# Cell
 def to_detach(b, cpu=True, gather=True):
     "Recursively detach lists of tensors in `b `; put them on the CPU if `cpu=True`."
     def _inner(x, cpu=True, gather=True):
@@ -90,40 +118,6 @@ def hook_outputs(modules, detach=True, cpu=False, grad=False):
     "Return `Hooks` that store activations of all `modules` in `self.stored`"
     return Hooks(modules, _hook_inner, detach=detach, cpu=cpu, is_forward=not grad)
 
-def children_and_parameters(m):
-    "Return the children of `m` and its direct parameters not registered in modules."
-    children = list(m.children())
-    children_p = sum([[id(p) for p in c.parameters()] for c in m.children()],[])
-    for p in m.parameters():
-        if id(p) not in children_p: children.append(ParameterModule(p))
-    return children
-
-def has_children(m):
-    try: next(m.children())
-    except StopIteration: return False
-    return True
-
-def flatten_model(m):
-    "Return the list of all submodules and parameters of `m`"
-    return sum(map(flatten_model,children_and_parameters(m)),[]) if has_children(m) else [m]
-
-def in_channels(m):
-    "Return the shape of the first weight layer in `m`."
-    for l in flatten_model(m):
-        if getattr(l, 'weight', None) is not None and len(l.weight.size())==4:
-            return l.weight.shape[1]
-    raise Exception('No weight layer')
-
-def one_param(m):
-    "First parameter in `m`"
-    return first(m.parameters())
-
-def dummy_eval(m, size=(64,64)):
-    "Evaluate `m` on a dummy input of a certain `size`"
-    ch_in = in_channels(m)
-    x = one_param(m).new(1, ch_in, *size).requires_grad_(False).uniform_(-1.,1.)
-    with torch.no_grad(): return m.eval()(x)
-
 def model_sizes(m, size=(64,64)):
     "Pass a dummy input through the model `m` to get the various sizes of activations."
     with hook_outputs(m) as hooks:
@@ -134,7 +128,9 @@ NormType = Enum('NormType', 'Batch BatchZero Weight Spectral Instance InstanceZe
 
 class SequentialEx(Module):
     "Like `nn.Sequential`, but with ModuleList semantics, and can access module input"
-    def __init__(self, *layers): self.layers = nn.ModuleList(layers)
+    def __init__(self, *layers):
+        super().__init__()
+        self.layers = nn.ModuleList(layers)
 
     def forward(self, x):
         res = x
@@ -180,6 +176,19 @@ def BatchNorm(nf, ndim=2, norm_type=NormType.Batch, **kwargs):
     "BatchNorm layer with `nf` features and `ndim` initialized depending on `norm_type`."
     return _get_norm('BatchNorm', nf, ndim, zero=norm_type==NormType.BatchZero, **kwargs)
 
+def AvgPool(ks=2, stride=None, padding=0, ndim=2, ceil_mode=False):
+    "nn.AvgPool layer for `ndim`"
+    assert 1 <= ndim <= 3
+    return getattr(nn, f"AvgPool{ndim}d")(ks, stride=stride, padding=padding, ceil_mode=ceil_mode)
+
+class MergeLayer(Module):
+    "Merge a shortcut with the result of the module by adding them or concatenating them if `dense=True`."
+    def __init__(self, dense:bool=False):
+        super().__init__()
+        self.dense=dense
+
+    def forward(self, x): return torch.cat([x,x.orig], dim=1) if self.dense else (x+x.orig)
+
 class ConvLayer(nn.Sequential):
     "Create a sequence of convolutional (`ni` to `nf`), ReLU (if `use_activ`) and `norm_type` layers."
     @delegates(nn.Conv2d)
@@ -205,11 +214,85 @@ class ConvLayer(nn.Sequential):
         if xtra: layers.append(xtra)
         super().__init__(*layers)
 
+class SimpleSelfAttention(Module):
+    def __init__(self, n_in:int, ks=1, sym=False):
+        super().__init__()
+        self.sym,self.n_in = sym,n_in
+        self.conv = _conv1d_spect(n_in, n_in, ks, padding=ks//2, bias=False)
+        self.gamma = nn.Parameter(tensor([0.]))
+
+    def forward(self,x):
+        if self.sym:
+            c = self.conv.weight.view(self.n_in,self.n_in)
+            c = (c + c.t())/2
+            self.conv.weight = c.view(self.n_in,self.n_in,1)
+
+        size = x.size()
+        x = x.view(*size[:2],-1)
+
+        convx = self.conv(x)
+        xxT = torch.bmm(x,x.permute(0,2,1).contiguous())
+        o = torch.bmm(xxT, convx)
+        o = self.gamma * o + x
+        return o.view(*size).contiguous()
+
+class ResBlock(Module):
+    "Resnet block from `ni` to `nh` with `stride`"
+    @delegates(ConvLayer.__init__)
+    def __init__(self, expansion, ni, nf, stride=1, groups=1, reduction=None, nh1=None, nh2=None, dw=False, g2=1,
+                 sa=False, sym=False, norm_type=NormType.Batch, act_cls=nn.ReLU, ndim=2, ks=3,
+                 pool=AvgPool, pool_first=True, **kwargs):
+        super().__init__()
+        norm2 = (NormType.BatchZero if norm_type==NormType.Batch else
+                 NormType.InstanceZero if norm_type==NormType.Instance else norm_type)
+        if nh2 is None: nh2 = nf
+        if nh1 is None: nh1 = nh2
+        nf,ni = nf*expansion,ni*expansion
+        k0 = dict(norm_type=norm_type, act_cls=act_cls, ndim=ndim, **kwargs)
+        k1 = dict(norm_type=norm2, act_cls=None, ndim=ndim, **kwargs)
+        convpath  = [ConvLayer(ni,  nh2, ks, stride=stride, groups=ni if dw else groups, **k0),
+                     ConvLayer(nh2,  nf, ks, groups=g2, **k1)
+        ] if expansion == 1 else [
+                     ConvLayer(ni,  nh1, 1, **k0),
+                     ConvLayer(nh1, nh2, ks, stride=stride, groups=nh1 if dw else groups, **k0),
+                     ConvLayer(nh2,  nf, 1, groups=g2, **k1)]
+        if reduction: convpath.append(SEModule(nf, reduction=reduction, act_cls=act_cls))
+        if sa: convpath.append(SimpleSelfAttention(nf,ks=1,sym=sym))
+        self.convpath = nn.Sequential(*convpath)
+        idpath = []
+        if ni!=nf: idpath.append(ConvLayer(ni, nf, 1, act_cls=None, ndim=ndim, **kwargs))
+        if stride!=1: idpath.insert((1,0)[pool_first], pool(stride, ndim=ndim, ceil_mode=True))
+        self.idpath = nn.Sequential(*idpath)
+        self.act = nn.ReLU(inplace=True) if act_cls is nn.ReLU() else act_cls()
+
+    def forward(self, x): return self.act(self.convpath(x) + self.idpath(x))
+
+def icnr_init(x, scale=2, init=nn.init.kaiming_normal_):
+    "ICNR init of `x`, with `scale` and `init` function"
+    ni,nf,h,w = x.shape
+    ni2 = int(ni/(scale**2))
+    k = init(x.new_zeros([ni2,nf,h,w])).transpose(0, 1)
+    k = k.contiguous().view(ni2, nf, -1)
+    k = k.repeat(1, 1, scale**2)
+    return k.contiguous().view([nf,ni,h,w]).transpose(0, 1)
+
+class PixelShuffle_ICNR(nn.Sequential):
+    "Upsample by `scale` from `ni` filters to `nf` (default `ni`), using `nn.PixelShuffle`."
+    def __init__(self, ni, nf=None, scale=2, blur=False, norm_type=NormType.Weight, act_cls=nn.ReLU):
+        super().__init__()
+        nf = ifnone(nf, ni)
+        layers = [ConvLayer(ni, nf*(scale**2), ks=1, norm_type=norm_type, act_cls=act_cls, bias_std=0),
+                  nn.PixelShuffle(scale)]
+        layers[0][0].weight.data.copy_(icnr_init(layers[0][0].weight.data))
+        if blur: layers += [nn.ReplicationPad2d((1,0,1,0)), nn.AvgPool2d(2, stride=1)]
+        super().__init__(*layers)
+
 class UnetBlock(Module):
     "A quasi-UNet block, using `PixelShuffle_ICNR upsampling`."
     @delegates(ConvLayer.__init__)
     def __init__(self, up_in_c, x_in_c, hook, final_div=True, blur=False, act_cls=nn.ReLU,
                  self_attention=False, init=nn.init.kaiming_normal_, norm_type=None, **kwargs):
+        super().__init__()
         self.hook = hook
         self.shuf = PixelShuffle_ICNR(up_in_c, up_in_c//2, blur=blur, act_cls=act_cls, norm_type=norm_type)
         self.bn = BatchNorm(x_in_c)
@@ -233,7 +316,10 @@ class UnetBlock(Module):
 # Cell
 class ResizeToOrig(Module):
     "Merge a shortcut with the result of the module by adding them or concatenating them if `dense=True`."
-    def __init__(self, mode='nearest'): self.mode = mode
+    def __init__(self, mode='nearest'):
+        super().__init__()
+        self.mode = mode
+
     def forward(self, x):
         if x.orig.shape[-2:] != x.shape[-2:]:
             x = F.interpolate(x, x.orig.shape[-2:], mode=self.mode)
