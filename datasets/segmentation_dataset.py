@@ -45,15 +45,26 @@ class SegmentationDataset(Dataset):
     for transform in self.transforms:
       partial = transform(partial)
     return partial
+  
+  def get_image_as_tensor(self, path) -> torch.Tensor:
+    image = PIL.Image.open(path)
+    image = self.transform(image)
+    tensor = transforms.ToTensor()(image)
+    return tensor 
+
+  def get_input(self, index) -> torch.Tensor:
+    return self.get_image_as_tensor(self.images_dir/self.filenames[index])
+  
+  def get_target(self, index) -> torch.Tensor:
+    #mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
+    #mask = self.transform(mask)
+    #mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.LongTensor) # use this approach to prevent transforms.ToTensor converting everything to floats
+    return self.get_image_as_tensor(self.masks_dir/self.filenames[index]).type(torch.LongTensor)
 
   def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
-    image = PIL.Image.open(str(self.images_dir/self.filenames[index]))
-    image = self.transform(image)
-    image = transforms.ToTensor()(image)
-    mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
-    mask = self.transform(mask)
-    mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.LongTensor) # use this approach to prevent transforms.ToTensor converting everything to floats
-    return (image, mask)
+    input = self.get_input(index)
+    target = self.get_target(index)
+    return (input, target)
 
   def show_item(self, index, figsize=None):
     fig, axes = plt.subplots(1, 2, figsize=figsize)

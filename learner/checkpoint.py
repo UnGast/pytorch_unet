@@ -16,6 +16,7 @@ class LearnerCheckpoint():
         self.train_history = train_history
         self.last_metrics = {}
         self.extract_last_metrics()
+        self.path = None
 
     @property
     def model_state(self):
@@ -83,9 +84,12 @@ class LearnerCheckpoint():
 
         self.make_metrics_figure().savefig(path/'metrics.png')
 
+        self.path = path
+
     @classmethod
     def load(cls, path: Path) -> 'LearnerCheckpoint':
         result = cls(None, None, None, None)
+        result.path = path
 
         with open(path/'epoch.txt', 'r') as file: 
             result.epoch = int(file.read())

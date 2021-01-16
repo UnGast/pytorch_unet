@@ -20,15 +20,12 @@ class LearnerCheckpointAnalyzer:
             if checkpoint_path.is_dir():
                 self.add_checkpoint(path=checkpoint_path)
 
-    """def make_model_groups(self) -> Dict[str, LearnerCheckpoint]:
-        groups = {}
-        for checkpoint in self.checkpoints:
-            if not checkpoint.model_id in groups:
-                groups[checkpoint.model_id] = []
-
-            groups[checkpoint.model_id].append(checkpoint)
-        
-        return groups"""
+    def get_best_checkpoint(self) -> LearnerCheckpoint:
+        """
+        get the best checkpoint defined by valid_accuracy metric
+        """
+        sorted_checkpoints = sorted(self.checkpoints, key=lambda x: x.last_metrics['valid_accuracy'], reverse=True)
+        return sorted_checkpoints[0]
 
     def extract_checkpoint_overview_data(self, checkpoint: LearnerCheckpoint) -> Dict[str, Any]:
         data = {'epoch': checkpoint.epoch}
