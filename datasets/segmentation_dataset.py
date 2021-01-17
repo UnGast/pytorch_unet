@@ -82,7 +82,15 @@ class SegmentationDataset(Dataset):
     for i in range(0, n_items):
       row = math.floor(i / items_per_row)
       column = i % items_per_row * 2
-      axes[row, column].imshow(self[i][0].permute(1, 2, 0))
+      input = self[i][0]
+      input = input.permute(1, 2, 0)
+      merged_input = input[:,:,:3]
+      for i in range(3, input.shape[2]):
+        merge_channel_index = i % 3
+        merge_channel_data = input[:,:,i]
+        merge_channel_data = (merge_channel_data - merge_channel_data.min()) / (merge_channel_data.max() - merge_channel_data.min())
+        merged_input[:,:,merge_channel_index] += merge_channel_data
+      axes[row, column].imshow(merged_input)
       axes[row, column+1].imshow(self[i][1], cmap='hsv')
 
     fig.show()
