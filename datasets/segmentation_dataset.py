@@ -22,24 +22,26 @@ class SegmentationDataset(Dataset):
     self.root_dir = root_dir
     self.images_dir = root_dir/part/'images'
     self.masks_dir = root_dir/part/'masks'
+    self.image_extension = image_extension
+    self.mask_extension = mask_extension
 
     self.classes_file_path = root_dir/'classes.csv'
     with open(self.classes_file_path, 'r') as file:
       self.classes = file.read().split(',')
 
-    self.filenames = [file_path.name for file_path in self.images_dir.glob('*.{}'.format(image_extension))]
-    self.filenames = [file_path.name for file_path in self.masks_dir.glob('*.{}'.format(mask_extension)) if file_path.name in self.filenames]
+    self.item_ids = [file_path.stem for file_path in self.images_dir.glob('*.{}'.format(image_extension))]
+    self.item_ids = [file_path.stem for file_path in self.masks_dir.glob('*.{}'.format(mask_extension)) if file_path.stem in self.item_ids]
 
     self.transforms = transforms
 
     self.mask_channels = 1
-    if len(self.filenames) > 0:
+    if len(self.item_ids) > 0:
       image, _ = self[0]
       self.image_channels = image.shape[0]
       self.item_size = (image.shape[2], image.shape[1])
   
   def __len__(self):
-    return len(self.filenames)
+    return len(self.item_ids)
 
   def transform(self, partial: torch.Tensor):
     for transform in self.transforms:
@@ -53,13 +55,10 @@ class SegmentationDataset(Dataset):
     return tensor 
 
   def get_input(self, index) -> torch.Tensor:
-    return self.get_image_as_tensor(self.images_dir/self.filenames[index])
+    return self.get_image_as_tensor(self.images_dir/'{}.{}'.format(self.item_ids[index], self.image_extension))
   
   def get_target(self, index) -> torch.Tensor:
-    #mask = PIL.Image.open(str(self.masks_dir/self.filenames[index]))
-    #mask = self.transform(mask)
-    #mask = torch.from_numpy(np.array(mask)).squeeze().type(torch.LongTensor) # use this approach to prevent transforms.ToTensor converting everything to floats
-    return self.get_image_as_tensor(self.masks_dir/self.filenames[index]).type(torch.LongTensor)
+    return (self.get_image_as_tensor(self.masks_dir/'{}.{}'.format(self.item_ids[index], self.mask_extension)).squeeze(dim=0) * 255).type(torch.LongTensor)
 
   def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
     input = self.get_input(index)
@@ -69,12 +68,14 @@ class SegmentationDataset(Dataset):
   def show_item(self, index, figsize=None):
     fig, axes = plt.subplots(1, 2, figsize=figsize)
     axes[0].imshow(self[index][0].permute(1, 2, 0))
-    axes[1].imshow(self[index][1])
+    axes[1].imshow(self[index][1], c, cmap='hsv')
     fig.show()
 
   def show_items(self, n_items=1, items_per_row=3, figsize=None):
     row_count = math.ceil(n_items / items_per_row)
     column_count = items_per_row * 2
+    if row_count == 1:
+      column_count = min(column_count, n_items * 2)
     
     fig, axes = plt.subplots(row_count, column_count, squeeze=False, figsize=figsize)
 
@@ -82,7 +83,7 @@ class SegmentationDataset(Dataset):
       row = math.floor(i / items_per_row)
       column = i % items_per_row * 2
       axes[row, column].imshow(self[i][0].permute(1, 2, 0))
-      axes[row, column+1].imshow(self[i][1])
+      axes[row, column+1].imshow(self[i][1], cmap='hsv')
 
     fig.show()
     
