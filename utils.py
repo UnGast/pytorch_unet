@@ -58,4 +58,9 @@ def dummy_eval(m, size=(64,64)):
     "Evaluate `m` on a dummy input of a certain `size`"
     ch_in = in_channels(m)
     x = one_param(m).new(1, ch_in, *size).requires_grad_(False).uniform_(-1.,1.)
-    with torch.no_grad(): return m.eval()(x)
+
+    if next(m.parameters()).is_cuda:
+        x = x.cuda()
+
+    with torch.no_grad():
+        return m.eval()(x)
