@@ -18,30 +18,59 @@ class SegmentationDataset(Dataset):
   """
   a dataset where items are of shape (image: torch.Tensor, mask: torch.Tensor)
   """
-  def __init__(self, root_dir: Path, part: DatasetPart, image_extension='png', mask_extension='png', transforms=[]):
-    self.root_dir = root_dir
-    self.images_dir = root_dir/part/'images'
-    self.masks_dir = root_dir/part/'masks'
-    self.image_extension = image_extension
-    self.mask_extension = mask_extension
+  def __init__(self, item_paths: [(Path, Path)], classes: [str], transforms):
+    self.item_paths = item_paths
 
-    self.classes_file_path = root_dir/'classes.csv'
-    with open(self.classes_file_path, 'r') as file:
-      self.classes = file.read().split(',')
-
-    self.item_ids = [file_path.stem for file_path in self.images_dir.glob('*.{}'.format(image_extension))]
-    self.item_ids = [file_path.stem for file_path in self.masks_dir.glob('*.{}'.format(mask_extension)) if file_path.stem in self.item_ids]
+    self.classes = classes
 
     self.transforms = transforms
 
     self.mask_channels = 1
-    if len(self.item_ids) > 0:
+    if len(self.item_paths) > 0:
       image, _ = self[0]
       self.image_channels = image.shape[0]
       self.item_size = (image.shape[2], image.shape[1])
   
+  @classmethod
+  def from_directory(cls, directory: Path, inputs_directory_name: str='images', targets_directory_name: str='masks', classes_file_path=None, image_extension='png', mask_extension='png', transforms=[]) -> 'SegmentationDataset':
+    input_paths = [file_path for file_path in (directory/inputs_directory_name).glob('*.{}'.format(image_extension))]
+    item_paths = []
+    for input_path in input_paths:
+      target_path = directory/targets_directory_name/'{}.{}'.format(input_path.stem, mask_extension)
+      if target_path.exists():
+        item_paths.append((input_path, target_path))
+
+    if classes_file_path is None:
+      classes_file_path = directory/'classes.csv'
+    classes = []
+    with open(classes_file_path, 'r') as file:
+      classes = file.read().split(',')
+
+    dataset = cls(item_paths=item_paths, classes=classes, transforms=transforms)
+
+    return dataset
+
+  def split_by_percentage(self, percentage: float) -> ('SegmentationDataset', 'SegmentationDataset'):
+    """
+    Split this dataset into two parts (for training and validation) by the given percentage.
+    The split should always be the same if the items were read in the same order.
+    """
+    if percentage <= 1:
+      percentage *= 100
+
+    split_index = math.ceil(len(self) * percentage / 100)
+    item_paths1 = list(self.item_paths[:split_index])
+    item_paths2 = []
+    if split_index < len(self):
+      item_paths2 = list(self.item_paths[split_index:])
+
+    dataset1 = SegmentationDataset(item_paths=item_paths1, classes=self.classes, transforms=self.transforms)
+    dataset2 = SegmentationDataset(item_paths=item_paths2, classes=self.classes, transforms=self.transforms)
+
+    return (dataset1, dataset2)
+
   def __len__(self):
-    return len(self.item_ids)
+    return len(self.item_paths)
 
   def transform(self, partial: torch.Tensor):
     for transform in self.transforms:
@@ -55,10 +84,10 @@ class SegmentationDataset(Dataset):
     return tensor 
 
   def get_input(self, index) -> torch.Tensor:
-    return self.get_image_as_tensor(self.images_dir/'{}.{}'.format(self.item_ids[index], self.image_extension))
+    return self.get_image_as_tensor(self.item_paths[index][0])
   
   def get_target(self, index) -> torch.Tensor:
-    return (self.get_image_as_tensor(self.masks_dir/'{}.{}'.format(self.item_ids[index], self.mask_extension)).squeeze(dim=0) * 255).type(torch.LongTensor)
+    return (self.get_image_as_tensor(self.item_paths[index][1]).squeeze(dim=0) * 255).type(torch.LongTensor)
 
   def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
     input = self.get_input(index)
