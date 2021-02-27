@@ -337,7 +337,8 @@ class DynamicUnet(SequentialEx):
  
         with torch.no_grad():
             imsize = img_size
-            encoder.cuda()
+            if torch.cuda.device_count() > 0:
+                encoder.cuda()
             sizes = model_sizes(encoder, size=imsize)
             encoder.cpu()
             sz_chg_idxs = list(reversed(_get_sz_change_idxs(sizes)))

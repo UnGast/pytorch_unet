@@ -15,15 +15,19 @@ class DatasetPart(Enum):
   Valid = 'valid'
 
 class SegmentationDataset(Dataset):
-  """
-  a dataset where items are of shape (image: torch.Tensor, mask: torch.Tensor)
-  """
   def __init__(self, item_paths: [(Path, Path)], classes: [str], transforms):
+    """
+    a dataset where items are of shape (image: torch.Tensor, mask: torch.Tensor),
+
+    transforms should be given as: [(apply_on_y: bool, transform)]
+    """
+
     self.item_paths = item_paths
 
     self.classes = classes
 
     self.transforms = transforms
+    self.transformed_per_original = 0
 
     self.mask_channels = 1
     if len(self.item_paths) > 0:
@@ -70,29 +74,40 @@ class SegmentationDataset(Dataset):
     return (dataset1, dataset2)
 
   def __len__(self):
-    return len(self.item_paths)
+    return len(self.item_paths) * (self.transformed_per_original + 1)
 
-  def transform(self, partial: torch.Tensor):
-    for transform in self.transforms:
-      partial = transform(partial)
-    return partial
-  
   def get_image_as_tensor(self, path) -> torch.Tensor:
     image = PIL.Image.open(path)
-    image = self.transform(image)
     tensor = transforms.ToTensor()(image)
     return tensor 
 
-  def get_input(self, index) -> torch.Tensor:
-    return self.get_image_as_tensor(self.item_paths[index][0])
+  def get_input(self, path, transforms) -> torch.Tensor:
+    original = self.get_image_as_tensor(path)
+    transformed = original
+    if len(transforms) > 0:
+      transforms = [x[1] for x in transforms]
+      transformed = torch.nn.Sequential(*transforms)(transformed)
+    return transformed
   
-  def get_target(self, index) -> torch.Tensor:
-    return (self.get_image_as_tensor(self.item_paths[index][1]).squeeze(dim=0) * 255).type(torch.LongTensor)
+  def get_target(self, path, transforms) -> torch.Tensor:
+    original = (self.get_image_as_tensor(path).squeeze(dim=0) * 255).type(torch.LongTensor)
+    filtered_transforms = [x[1] for x in transforms if x[0]]
+    transformed = original
+    if len(filtered_transforms) > 0:
+      transformed = torch.nn.Sequential(*filtered_transforms)(transformed.unsqueeze(dim=0)).squeeze(dim=0)
+    return transformed
 
   def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
-    input = self.get_input(index)
-    target = self.get_target(index)
+    transforms = []
+    if index % (self.transformed_per_original + 1) != 0:
+      transforms = self.get_random_transforms()
+    input_path, target_path = self.item_paths[int(index / (self.transformed_per_original + 1))]
+    input = self.get_input(input_path, transforms)
+    target = self.get_target(target_path, transforms)
     return (input, target)
+
+  def get_random_transforms(self):
+    return random.sample(self.transforms, random.randint(0, len(self.transforms)))
 
   def show_item(self, index, figsize=None):
     fig, axes = plt.subplots(1, 2, figsize=figsize)

@@ -49,6 +49,7 @@ class Learner():
         loss_fn = nn.CrossEntropyLoss(),\
         metrics: [Union[str, Metric]] = [AccuracyMetric()],\
         checkpoint_config: Optional[LearnerCheckpointConfig] = None,\
+        use_cuda: bool = True,
         callback: LearnerCallback=LearnerCallback()):
             self.model = model
             self.train_loader = train_loader
@@ -77,6 +78,8 @@ class Learner():
             self.train_history = []
 
             self.checkpoint_config = checkpoint_config
+
+            self.use_cuda = use_cuda and torch.cuda.device_count() > 0
 
             self.callback = callback
 
@@ -276,7 +279,9 @@ class UNetLearner(Learner):
                 for batch_index, batch in enumerate(dataloader):
                     batch_input = batch[0]
                     batch_target = batch[1]
-                    batch_prediction = torch.argmax(self.model(batch_input.cuda()).cpu(), dim=1).type(torch.FloatTensor)
+                    if self.use_cuda:
+                        batch_input = batch_input.cuda()
+                    batch_prediction = torch.argmax(self.model(batch_input).cpu(), dim=1).type(torch.FloatTensor)
                     
                     for item_index in range(0, batch_input.shape[0]):
                         if abs_item_index >= n_items:
