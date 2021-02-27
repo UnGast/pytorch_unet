@@ -33,7 +33,7 @@ class SegmentationDataset(Dataset):
     if len(self.item_paths) > 0:
       image, _ = self[0]
       self.image_channels = image.shape[0]
-      self.item_size = (image.shape[2], image.shape[1])
+      self.item_size = (image.shape[1], image.shape[2])
   
   @classmethod
   def from_directory(cls, directory: Path, inputs_directory_name: str='images', targets_directory_name: str='masks', classes_file_path=None, image_extension='png', mask_extension='png', transforms=[]) -> 'SegmentationDataset':
