@@ -289,11 +289,11 @@ class UNetLearner(Learner):
                         input, target = (batch_input[item_index], batch_target[item_index])
                         prediction = batch_prediction[item_index]
 
-                        axes[abs_item_index][0].imshow(input.permute(1, 2, 0).squeeze())
+                        axes[abs_item_index][0].imshow(input.cpu().permute(1, 2, 0).squeeze())
                         axes[abs_item_index][0].set_title('input')
-                        axes[abs_item_index][1].imshow(target)
+                        axes[abs_item_index][1].imshow(target.cpu())
                         axes[abs_item_index][1].set_title('target')
-                        axes[abs_item_index][2].imshow(prediction.squeeze())
+                        axes[abs_item_index][2].imshow(prediction.cpu().squeeze())
                         axes[abs_item_index][2].set_title('prediction')
 
                         abs_item_index += 1
