@@ -26,15 +26,18 @@ class SegmentationDataset(Dataset):
 
     self.classes = classes
 
-    self.transforms = transforms
-    self.transformed_per_original = 0
+    self._transforms = transforms
+    self._transformed_per_original = 0
+    self.transforms_for_items = []
+
+    self.update_transforms_for_items()
 
     self.mask_channels = 1
     if len(self.item_paths) > 0:
       image, _ = self[0]
       self.image_channels = image.shape[0]
       self.item_size = (image.shape[1], image.shape[2])
-  
+    
   @classmethod
   def from_directory(cls, directory: Path, inputs_directory_name: str='images', targets_directory_name: str='masks', classes_file_path=None, image_extension='png', mask_extension='png', transforms=[]) -> 'SegmentationDataset':
     input_paths = [file_path for file_path in (directory/inputs_directory_name).glob('*.{}'.format(image_extension))]
@@ -76,6 +79,35 @@ class SegmentationDataset(Dataset):
   def __len__(self):
     return len(self.item_paths) * (self.transformed_per_original + 1)
 
+  @property
+  def transforms(self):
+    return self._transforms
+  
+  @transforms.setter
+  def transforms(self, new_value):
+    self._transforms = new_value
+    self.update_transforms_for_items()
+
+  @property
+  def transformed_per_original(self):
+    return self._transformed_per_original
+  
+  @transformed_per_original.setter
+  def transformed_per_original(self, new_value):
+    self._transformed_per_original = new_value
+    self.update_transforms_for_items()
+
+  def update_transforms_for_items(self):
+    self.transforms_for_items = [[]] * len(self)
+    for index in range(len(self)):
+      if index % (self.transformed_per_original + 1) == 0:
+        self.transforms_for_items[index] = []
+      else:
+        self.transforms_for_items[index] = self.get_random_transforms()
+
+  def get_random_transforms(self):
+    return random.sample(self.transforms, random.randint(0, len(self.transforms)))
+
   def get_image_as_tensor(self, path) -> torch.Tensor:
     image = PIL.Image.open(path)
     tensor = transforms.ToTensor()(image)
@@ -98,16 +130,11 @@ class SegmentationDataset(Dataset):
     return transformed
 
   def __getitem__(self, index) -> (torch.Tensor, torch.Tensor):
-    transforms = []
-    if index % (self.transformed_per_original + 1) != 0:
-      transforms = self.get_random_transforms()
+    transforms = self.transforms_for_items[index] or []
     input_path, target_path = self.item_paths[int(index / (self.transformed_per_original + 1))]
     input = self.get_input(input_path, transforms)
     target = self.get_target(target_path, transforms)
     return (input, target)
-
-  def get_random_transforms(self):
-    return random.sample(self.transforms, random.randint(0, len(self.transforms)))
 
   def show_item(self, index, figsize=None):
     fig, axes = plt.subplots(1, 2, figsize=figsize)
