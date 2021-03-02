@@ -76,6 +76,22 @@ class SegmentationDataset(Dataset):
 
     return (dataset1, dataset2)
 
+  def split_by_id_file(self, valid_id_csv_path: Path) -> ('SegmentationDataset', 'SegmentationDataset'):
+    """
+    first dataset returned are all items that are not in the id file
+
+    second dataset are all the items that are listed in the id file
+    """
+
+    valid_ids = valid_id_csv_path.read_text().split(',')
+    item_paths_1 = [x for x in self.item_paths if x[0].stem not in valid_ids]
+    item_paths_2 = [x for x in self.item_paths if x[0].stem in valid_ids]
+
+    dataset1 = SegmentationDataset(item_paths=item_paths_1, classes=self.classes, transforms=self.transforms)   
+    dataset2 = SegmentationDataset(item_paths=item_paths_2, classes=self.classes, transforms=self.transforms)   
+
+    return (dataset1, dataset2)
+
   def __len__(self):
     return len(self.item_paths) * (self.transformed_per_original + 1)
 

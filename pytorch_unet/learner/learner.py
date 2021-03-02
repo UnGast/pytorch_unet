@@ -108,7 +108,7 @@ class Learner():
         while not stop_condition.fulfilled(epoch=e, full_metrics=self.epoch_metrics):# for e in range(self.current_epoch + 1, self.current_epoch + 1 + n_epochs):
             e += 1
             self.current_epoch = e
-            self.callback('epoch_start', e)
+            self.callback('epoch_start', epoch=e)
 
             total_epoch_train_loss = 0
             total_epoch_metrics = {key: 0 for (key, _) in self.epoch_metrics.items()}
