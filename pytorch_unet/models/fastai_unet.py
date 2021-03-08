@@ -141,7 +141,8 @@ class SequentialEx(Module):
             res.orig, nres.orig = None, None
             res = nres
         return res
-
+    
+    def __len__(self):       return len(self.layers)
     def __getitem__(self,i): return self.layers[i]
     def append(self,l):      return self.layers.append(l)
     def extend(self,l):      return self.layers.extend(l)
@@ -306,6 +307,9 @@ class UnetBlock(Module):
 
     def forward(self, up_in):
         s = self.hook.stored
+        input_device = up_in.get_device()
+        if input_device > -1:
+            s = s.to(device=input_device)
         up_out = self.shuf(up_in)
         ssh = s.shape[-2:]
         if ssh != up_out.shape[-2:]:
