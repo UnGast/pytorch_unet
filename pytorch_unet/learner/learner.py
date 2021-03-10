@@ -66,7 +66,6 @@ class Learner():
             self.lr_policy = lr_policy
             self.loss_fn = loss_fn 
             self.optimizer = optim.SGD
-            self.epoch_count = 0
 
             self.current_epoch = -1
             self.epoch_metrics = {

@@ -83,6 +83,9 @@ class LearnerCheckpoint():
             file.write('\n')
 
         self.make_metrics_figure().savefig(path/'metrics.png')
+        
+        # indicate that the checkpoint is complete
+        (path/'finished').touch()
 
         self.path = path
 
@@ -90,6 +93,9 @@ class LearnerCheckpoint():
     def load(cls, path: Path) -> 'LearnerCheckpoint':
         result = cls(None, None, None, None)
         result.path = path
+
+        if not (path/'finished').exists():
+            raise AssertionError("tried to load an unfinished checkpoint: {}".format(path))
 
         with open(path/'epoch.txt', 'r') as file: 
             result.epoch = int(file.read())

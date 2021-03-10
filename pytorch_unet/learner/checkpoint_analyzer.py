@@ -17,7 +17,7 @@ class LearnerCheckpointAnalyzer:
 
     def add_all_checkpoints_in_directory(self, path: Path):
         for checkpoint_path in path.iterdir():
-            if checkpoint_path.is_dir():
+            if checkpoint_path.is_dir() and (checkpoint_path/'finished').exists():
                 self.add_checkpoint(path=checkpoint_path)
 
     def get_best_checkpoint(self) -> LearnerCheckpoint:

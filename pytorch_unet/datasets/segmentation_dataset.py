@@ -8,6 +8,7 @@ from enum import Enum
 import PIL
 import matplotlib.pyplot as plt
 import math
+import os
 import random
 
 class DatasetPart(Enum):
@@ -181,6 +182,46 @@ class SegmentationDataset(Dataset):
       axes[row, column+1].imshow(self[i][1], cmap='hsv')
 
     fig.show()
+
+  def export_to_directory_with_transforms_applied(self, directory: Path):
+    """
+    The directory will contain a classes.csv as well as an images and masks dir.
+
+    The items are saved in the order in which they occur in the dataset, transforms applied.
+
+    The transform definitions are not saved.
+    """
+
+    if not directory.exists():
+      os.makedirs(directory)
+      print("created directory {}".format(directory))
+
+    (directory/'classes.csv').write_text(','.join(self.classes))
+    print("saved classes.csv")
+
+    inputs_dir = directory/'images'
+    if not inputs_dir.exists():
+      os.makedirs(inputs_dir)
+      print("created directory", inputs_dir)
+
+    targets_dir = directory/'masks'
+    if not targets_dir.exists():
+      os.makedirs(targets_dir)
+      print("created directory", targets_dir)
+
+    for (index, (input, target)) in enumerate(self):
+      input = input.numpy()
+      input = (input * 255).astype(np.uint8)
+      input = PIL.Image.fromarray(input.transpose(1, 2, 0))
+      input.save(directory/'images/{}.bmp'.format(index))
+      
+      target = target.numpy()
+      target = target.astype(np.uint8)
+      target = PIL.Image.fromarray(target)
+      target.save(directory/'masks/{}.bmp'.format(index))
+
+      print("exported item {}".format(index))
+
     
 class SegmentationTestDataset(SegmentationDataset):
     def __init__(self, item_size: (int, int), item_count: int):
