@@ -37,9 +37,9 @@ class LearnerCheckpointAnalyzer:
         show the best checkpoints and associated data for each model
         max_checkpoints: 0 to disable, n > 0 to limit number of outputted checkpoints per model
         """
-        prepared = sorted(self.checkpoints, key=lambda x: x.last_metrics[comparison_metric])
+        prepared = sorted(self.checkpoints, key=lambda x: x.last_metrics[comparison_metric], reverse=True)
         if max_checkpoints > 0:
-            prepared = prepared[max(0, len(prepared) - max_checkpoints):len(prepared)]
+            prepared = prepared[0:max_checkpoints] #max(0, len(prepared) - max_checkpoints):len(prepared)]
 
         data = pd.DataFrame([self.extract_checkpoint_overview_data(checkpoint) for checkpoint in prepared])
 
